@@ -1,10 +1,11 @@
 import type { Timestamp } from 'firebase/firestore';
 
 export type UserProfile = {
-  uid: string;
+  id: string;
   name: string;
   email: string;
   bio?: string;
   avatarUrl?: string;
-  createdAt: Timestamp;
+  createdAt: Timestamp | any;
+  updatedAt?: Timestamp | any;
 };

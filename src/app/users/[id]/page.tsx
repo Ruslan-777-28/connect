@@ -1,34 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useMemo } from 'react';
+import { doc } from 'firebase/firestore';
+import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function UserProfilePage({ params }: { params: { id: string } }) {
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const firestore = useFirestore();
+  
+  const userDocRef = useMemoFirebase(
+    () => (params.id ? doc(firestore, 'users', params.id) : null),
+    [params.id, firestore]
+  );
 
-  useEffect(() => {
-    if (params.id) {
-      const fetchUserProfile = async () => {
-        setLoading(true);
-        const userDocRef = doc(db, 'users', params.id);
-        const docSnap = await getDoc(userDocRef);
-        if (docSnap.exists()) {
-          setUserProfile(docSnap.data() as UserProfile);
-        } else {
-          // Handle user not found
-          console.log('No such document!');
-        }
-        setLoading(false);
-      };
-      fetchUserProfile();
-    }
-  }, [params.id]);
+  const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
 
   if (loading) {
     return (
@@ -52,16 +40,14 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
     );
   }
 
-  const joinDate = userProfile.createdAt
-    ? new Date(userProfile.createdAt.seconds * 1000).toLocaleDateString(
-        'en-US',
-        {
+  const joinDate =
+    userProfile.createdAt && userProfile.createdAt.seconds
+      ? new Date(userProfile.createdAt.seconds * 1000).toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
-        }
-      )
-    : 'N/A';
+        })
+      : 'N/A';
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8">

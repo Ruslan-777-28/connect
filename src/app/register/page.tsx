@@ -5,8 +5,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase';
+import { doc, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useFirestore, setDocumentNonBlocking } from '@/firebase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,8 @@ const formSchema = z.object({
 
 export default function RegisterPage() {
   const router = useRouter();
+  const auth = useAuth();
+  const firestore = useFirestore();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -64,18 +66,18 @@ export default function RegisterPage() {
 
       await updateProfile(user, { displayName: values.name });
 
-      const userProfile: Omit<UserProfile, 'createdAt'> = {
-        uid: user.uid,
+      const userProfile: Omit<UserProfile, 'createdAt' | 'id'> = {
         name: values.name,
         email: values.email,
         bio: '',
         avatarUrl: '',
       };
 
-      await setDoc(doc(db, 'users', user.uid), {
+      setDocumentNonBlocking(doc(firestore, 'users', user.uid), {
+        id: user.uid,
         ...userProfile,
         createdAt: serverTimestamp(),
-      });
+      }, { merge: false });
 
       toast({
         title: 'Registration Successful',

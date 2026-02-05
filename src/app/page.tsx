@@ -1,35 +1,24 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { useMemo } from 'react';
+import { collection, orderBy, query } from 'firebase/firestore';
+import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import { UserCard } from '@/components/user-card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function HomePage() {
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loading, setLoading] = useState(true);
+  const firestore = useFirestore();
 
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const usersCollection = collection(db, 'users');
-        const q = query(usersCollection, orderBy('createdAt', 'desc'));
-        const querySnapshot = await getDocs(q);
-        const usersData = querySnapshot.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as UserProfile
-        );
-        setUsers(usersData);
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const usersQuery = useMemoFirebase(
+    () =>
+      firestore
+        ? query(collection(firestore, 'users'), orderBy('createdAt', 'desc'))
+        : null,
+    [firestore]
+  );
 
-    fetchUsers();
-  }, []);
+  const { data: users, isLoading: loading } = useCollection<UserProfile>(usersQuery);
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8">
@@ -48,10 +37,10 @@ export default function HomePage() {
             </div>
           ))}
         </div>
-      ) : users.length > 0 ? (
+      ) : users && users.length > 0 ? (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {users.map((user) => (
-            <UserCard key={user.uid} user={user} />
+            <UserCard key={user.id} user={user} />
           ))}
         </div>
       ) : (

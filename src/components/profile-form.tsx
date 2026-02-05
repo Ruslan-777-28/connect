@@ -4,10 +4,8 @@ import { useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { doc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
-import { useAuth } from '@/hooks/use-auth';
+import { doc, serverTimestamp } from 'firebase/firestore';
+import { useFirestore, useUser, updateDocumentNonBlocking } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -23,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import { UserAvatar } from './user-avatar';
 import { Camera } from 'lucide-react';
 import type { UserProfile } from '@/lib/types';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 const profileFormSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters.'),
@@ -36,7 +35,8 @@ interface ProfileFormProps {
 }
 
 export function ProfileForm({ userProfile }: ProfileFormProps) {
-  const { user } = useAuth();
+  const { user } = useUser();
+  const firestore = useFirestore();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -66,24 +66,26 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
     try {
       let avatarUrl = userProfile.avatarUrl;
       if (avatarFile) {
+        const storage = getStorage();
         const storageRef = ref(storage, `avatars/${user.uid}`);
         const snapshot = await uploadBytes(storageRef, avatarFile);
         avatarUrl = await getDownloadURL(snapshot.ref);
       }
 
-      const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
+      const userDocRef = doc(firestore, 'users', user.uid);
+      updateDocumentNonBlocking(userDocRef, {
         name: data.name,
         bio: data.bio,
         avatarUrl: avatarUrl,
+        updatedAt: serverTimestamp()
       });
 
       toast({
         title: 'Success',
         description: 'Your profile has been updated.',
       });
-      // Refresh page or update context state if needed
-      window.location.reload(); 
+      // Refresh is no longer needed with real-time updates
+      // window.location.reload(); 
     } catch (error) {
       toast({
         variant: 'destructive',

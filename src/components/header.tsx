@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMemo } from 'react';
+import { doc } from 'firebase/firestore';
 import {
   Home,
   User,
@@ -11,7 +13,7 @@ import {
   Shield,
   Menu,
 } from 'lucide-react';
-import { useAuth } from '@/hooks/use-auth';
+import { useUser, useAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -22,10 +24,24 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { UserAvatar } from './user-avatar';
+import { UserProfile } from '@/lib/types';
 
 export function Header() {
-  const { user, userProfile, logout } = useAuth();
+  const { user } = useUser();
+  const auth = useAuth();
+  const firestore = useFirestore();
   const pathname = usePathname();
+  
+  const userDocRef = useMemoFirebase(
+    () => (user ? doc(firestore, 'users', user.uid) : null),
+    [user, firestore]
+  );
+  
+  const { data: userProfile } = useDoc<UserProfile>(userDocRef);
+
+  const logout = () => {
+    auth.signOut();
+  };
 
   const navLinks = user
     ? [

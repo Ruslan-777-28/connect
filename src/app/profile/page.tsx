@@ -1,11 +1,25 @@
 'use client';
 
-import { useAuth } from '@/hooks/use-auth';
+import { useMemo } from 'react';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
 import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { UserProfile } from '@/lib/types';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function ProfilePage() {
-  const { userProfile, loading } = useAuth();
+  const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
+
+  const userDocRef = useMemoFirebase(
+    () => (user ? doc(firestore, 'users', user.uid) : null),
+    [user, firestore]
+  );
+  
+  const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
+
+  const loading = isUserLoading || isProfileLoading;
 
   if (loading || !userProfile) {
     return (
@@ -17,9 +31,11 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle>Edit Profile</CardTitle>
           </CardHeader>
-          <CardContent>
-            {/* Skeleton loader can be added here */}
-            <p>Loading profile...</p>
+          <CardContent className="space-y-4">
+             <Skeleton className="h-24 w-24 rounded-full" />
+             <Skeleton className="h-8 w-1/2" />
+             <Skeleton className="h-20 w-full" />
+             <Skeleton className="h-10 w-24" />
           </CardContent>
         </Card>
       </div>

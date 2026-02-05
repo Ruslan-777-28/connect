@@ -9,7 +9,7 @@ interface UserCardProps {
 
 export function UserCard({ user }: UserCardProps) {
   return (
-    <Link href={`/users/${user.uid}`} className="group">
+    <Link href={`/users/${user.id}`} className="group">
       <Card className="h-full overflow-hidden transition-all duration-300 ease-in-out group-hover:shadow-lg group-hover:-translate-y-1">
         <CardContent className="flex flex-col items-center p-6 text-center">
           <UserAvatar user={user} className="mb-4 h-24 w-24 border-2 border-primary/20" />
