@@ -2,12 +2,25 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
     // Rules for user avatars
     match /avatars/{userId} {
-      // Anyone can read avatars to display them in user profiles and lists.
-      allow read;
+      // Any signed-in user can read avatars.
+      allow read: if isSignedIn();
+
       // Only the authenticated user can upload or update their own avatar.
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // The image must be smaller than 5MB.
+      allow write: if isOwner(userId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
   }
 }
