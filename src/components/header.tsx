@@ -47,7 +47,6 @@ export function Header() {
     ? [
         { href: '/', label: 'Home', icon: Home },
         { href: '/profile', label: 'Profile', icon: User },
-        { href: '/admin', label: 'Admin', icon: Shield },
       ]
     : [
         { href: '/login', label: 'Login', icon: LogIn },
