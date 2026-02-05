@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "UserProfile": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UserProfile",
+      "type": "object",
+      "description": "Represents a user's profile in the ConnectU application.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the UserProfile entity."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "User's first name."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "User's last name."
+        },
+        "profilePictureUrl": {
+          "type": "string",
+          "description": "URL of the user's profile picture.",
+          "format": "uri"
+        },
+        "bio": {
+          "type": "string",
+          "description": "User's biography or short description."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user profile was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the user profile was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "email",
+        "firstName",
+        "lastName",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "UserProfile",
+          "schema": {
+            "$ref": "#/backend/entities/UserProfile"
+          },
+          "description": "Stores user profile information.  Path-based ownership ensures only the authenticated user can access their own profile.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user, corresponding to the Firebase Auth UID."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed to support user authentication, profile management, user listings, and profile viewing features of the ConnectU application, adhering to the core design principles and strategy mandates.\n\n**Authorization Independence:** User profiles are stored directly under the `/users/{userId}` path, ensuring ownership is directly tied to the path. This eliminates the need for `get()` calls in security rules to verify ownership, thus achieving Authorization Independence.\n\n**Structural Segregation:** User profiles are stored in a dedicated collection (`/users/{userId}`), which simplifies security rules by ensuring that all documents in the collection share the same security requirements (i.e., only the authenticated user can read/write their own profile).\n\n**Access Modeling:** Path-based ownership (`/users/{userId}`) is used for user profiles, which naturally secures user data to only be accessible by the authenticated user.\n\n**QAPs (Rules are not Filters):** The structure supports secure `list` operations because profiles are stored with the user's ID as the document ID.  Listing users for the 'Home' page only requires reading the desired fields (`firstName`, `lastName`, `profilePictureUrl`) and does not expose any private or sensitive data without explicit authorization (e.g., email).\n\nThe structure inherently supports invariants such as ensuring that only the authenticated user can modify their profile and that timestamps are automatically managed during profile creation and updates."
+  }
+}

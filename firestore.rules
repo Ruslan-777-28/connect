@@ -1,0 +1,88 @@
+/**
+ * Core Philosophy:
+ * This ruleset enforces a strict user-ownership model where a user's data is
+ * stored in a document path directly tied to their unique Firebase
+ * Authentication UID. Users have full control over their own data, but cannot
+ * access, view, or modify the data of any other user.
+ *
+ * Data Structure:
+ * All user-specific data is stored under the top-level `/users` collection.
+ * The document ID for each user's profile is their Firebase Auth UID.
+ * - /users/{userId}: A UserProfile document.
+ *
+ * Key Security Decisions:
+ * - Strict Ownership: All operations (`get`, `create`, `update`, `delete`) on a
+ *   user's profile document are restricted to the authenticated user who owns
+ *   that document.
+ * - No User Listing: To prevent data leakage and protect user privacy, listing
+ *   the entire `/users` collection is explicitly disallowed. Client applications
+ *   requiring a user directory should implement this feature using a separate,
+ *   curated public collection or a trusted server-side environment (e.g., Cloud
+ *   Functions).
+ * - Relational Integrity: On creation, the UserProfile document must contain an
+ *   `id` field that matches the user's Auth UID, ensuring the document's path
+ *   and internal data are consistent. This `id` field is immutable and cannot be
+ *   changed on update.
+ *
+ * Denormalization for Authorization:
+ * The security model relies on path-based authorization (`/users/{userId}`), which
+ * is the most performant strategy. The UserProfile document contains an `id` field
+ * that mirrors the `{userId}` from the path, which is validated on creation to
+ * establish this ownership link permanently. This avoids the need for any costly
+ * `get` or `exists` calls in other rules.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions to promote readable, secure, and maintainable rules.
+
+    /**
+     * Checks if the current request is from an authenticated user.
+     */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /**
+     * Checks if the requesting user's UID matches the provided userId.
+     * This is the primary function for verifying document ownership.
+     */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /**
+     * Checks for ownership on an existing document. Used for safe updates/deletes.
+     * This prevents modifying or deleting a document that does not exist.
+     */
+    function isExistingOwner(userId) {
+      return isOwner(userId) && resource != null;
+    }
+
+    /**
+     * @description
+     *   Manages UserProfile documents. A user can create, read, update, and
+     *   delete their own profile document, but cannot access anyone else's.
+     *   Listing all users is explicitly forbidden to protect user privacy.
+     * @path
+     *   /users/{userId}
+     * @allow
+     *   (create) An authenticated user (uid: 'user_abc') creating their own
+     *   profile at `/users/user_abc`.
+     * @deny
+     *   (get) An authenticated user (uid: 'user_abc') trying to read a profile
+     *   at `/users/user_xyz`.
+     * @principle
+     *   Restricts access to a user's own data tree and enforces relational
+     *   integrity between a document's path and its internal content.
+     */
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && request.resource.data.id == userId;
+      allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
+      allow delete: if isExistingOwner(userId);
+    }
+  }
+}
