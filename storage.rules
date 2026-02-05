@@ -1,12 +1,13 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Rules for user avatars
+    match /avatars/{userId} {
+      // Anyone can read avatars to display them in user profiles and lists.
+      allow read;
+      // Only the authenticated user can upload or update their own avatar.
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
   }
 }
