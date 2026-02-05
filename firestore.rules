@@ -14,11 +14,9 @@
  * - Strict Ownership: All operations (`get`, `create`, `update`, `delete`) on a
  *   user's profile document are restricted to the authenticated user who owns
  *   that document.
- * - No User Listing: To prevent data leakage and protect user privacy, listing
- *   the entire `/users` collection is explicitly disallowed. Client applications
- *   requiring a user directory should implement this feature using a separate,
- *   curated public collection or a trusted server-side environment (e.g., Cloud
- *   Functions).
+ * - User Listing for Authenticated Users: Listing the `/users` collection is
+ *   allowed for any signed-in user to support the user directory feature.
+ *   Unauthenticated users cannot list users.
  * - Relational Integrity: On creation, the UserProfile document must contain an
  *   `id` field that matches the user's Auth UID, ensuring the document's path
  *   and internal data are consistent. This `id` field is immutable and cannot be
@@ -64,7 +62,7 @@ service cloud.firestore {
      * @description
      *   Manages UserProfile documents. A user can create, read, update, and
      *   delete their own profile document, but cannot access anyone else's.
-     *   Listing all users is explicitly forbidden to protect user privacy.
+     *   Listing all users is allowed for signed-in users.
      * @path
      *   /users/{userId}
      * @allow
@@ -79,7 +77,7 @@ service cloud.firestore {
      */
     match /users/{userId} {
       allow get: if isOwner(userId);
-      allow list: if false;
+      allow list: if isSignedIn();
       allow create: if isOwner(userId) && request.resource.data.id == userId;
       allow update: if isExistingOwner(userId) && request.resource.data.id == resource.data.id;
       allow delete: if isExistingOwner(userId);
