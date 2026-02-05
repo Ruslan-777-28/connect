@@ -31,6 +31,17 @@ const prompt = ai.definePrompt({
   output: {schema: GenerateFirebaseConfigOutputSchema},
   prompt: `You are an expert in Firebase and Next.js. Generate the necessary .env.local configuration settings for Firebase, so I can quickly initialize Firebase in my Next.js project. Only include the keys and values, do not provide any extra explanation.
 
+Use the NEXT_PUBLIC_ prefix for all variables. The variables should be:
+- NEXT_PUBLIC_FIREBASE_API_KEY
+- NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+- NEXT_PUBLIC_FIREBASE_PROJECT_ID
+- NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+- NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+- NEXT_PUBLIC_FIREBASE_APP_ID
+- NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+
+Use placeholder values like 'your-api-key'.
+
 Output the configuration settings in the format required by .env.local files.
 `,
 });
