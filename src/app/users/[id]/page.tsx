@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useParams } from 'next/navigation';
 import { doc } from 'firebase/firestore';
 import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
@@ -8,15 +9,17 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function UserProfilePage({ params }: { params: { id: string } }) {
+export default function UserProfilePage() {
+  const params = useParams();
   const firestore = useFirestore();
-  
+
   const userDocRef = useMemoFirebase(
-    () => (params.id ? doc(firestore, 'users', params.id) : null),
+    () => (params.id ? doc(firestore, 'users', params.id as string) : null),
     [params.id, firestore]
   );
 
-  const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
+  const { data: userProfile, isLoading: loading } =
+    useDoc<UserProfile>(userDocRef);
 
   if (loading) {
     return (
@@ -42,18 +45,21 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
 
   const joinDate =
     userProfile.createdAt && userProfile.createdAt.seconds
-      ? new Date(userProfile.createdAt.seconds * 1000).toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })
+      ? new Date(userProfile.createdAt.seconds * 1000).toLocaleDateString(
+          'en-US',
+          {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          }
+        )
       : 'N/A';
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8">
       <Card className="overflow-hidden">
         <div className="h-32 bg-primary/20" />
-        <CardContent className="flex flex-col items-center p-6 text-center -mt-16">
+        <CardContent className="relative -mt-16 flex flex-col items-center p-6 text-center">
           <UserAvatar
             user={userProfile}
             className="h-32 w-32 border-4 border-card"
