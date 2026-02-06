@@ -8,6 +8,8 @@ import type { UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Phone } from 'lucide-react';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -74,6 +76,9 @@ export default function UserProfilePage() {
           <p className="mt-4 text-sm text-muted-foreground">
             Joined on {joinDate}
           </p>
+          <Button variant="outline" size="icon" className="mt-4">
+            <Phone className="h-4 w-4" />
+          </Button>
         </CardContent>
       </Card>
     </div>
