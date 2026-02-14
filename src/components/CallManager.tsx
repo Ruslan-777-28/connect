@@ -11,12 +11,14 @@ import { collection, query, where, doc, getDoc } from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { IncomingCallToast } from './IncomingCallToast';
 import { ActiveCallBar } from './ActiveCallBar';
+import { useRouter } from 'next/navigation';
 
 export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
   const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const router = useRouter();
 
   const incomingCallsQuery = useMemoFirebase(
     () =>
@@ -83,9 +85,11 @@ export function CallManager() {
   }, [incomingCalls, firestore]);
   
   useEffect(() => {
-    const activeCall = activeCallsAsCallee?.[0] || activeCallsAsCaller?.[0];
-    if (activeCall) {
-        const otherPartyUid = user?.uid === activeCall.callerUid ? activeCall.calleeUid : activeCall.callerUid;
+    const allActiveCalls = [...(activeCallsAsCallee || []), ...(activeCallsAsCaller || [])];
+    const currentActiveCall = allActiveCalls[0];
+
+    if (currentActiveCall) {
+        const otherPartyUid = user?.uid === currentActiveCall.callerUid ? currentActiveCall.calleeUid : currentActiveCall.callerUid;
         const fetchOtherPartyProfile = async (call: Call) => {
             const userRef = doc(firestore, 'users', otherPartyUid);
             const userSnap = await getDoc(userRef);
@@ -94,14 +98,18 @@ export function CallManager() {
             }
             return call;
         }
-        fetchOtherPartyProfile(activeCall).then(callWithProfile => {
+        fetchOtherPartyProfile(currentActiveCall).then(callWithProfile => {
             setActiveCall(callWithProfile);
             setIncomingCall(null);
+
+            if (callWithProfile.status === 'accepted' && callWithProfile.roomUrl) {
+                router.push(`/call/${callWithProfile.id}`);
+            }
         })
     } else {
         setActiveCall(null);
     }
-  }, [activeCallsAsCallee, activeCallsAsCaller, firestore, user?.uid]);
+  }, [activeCallsAsCallee, activeCallsAsCaller, firestore, user?.uid, router]);
 
   if (incomingCall) {
     return <IncomingCallToast call={incomingCall} />;
