@@ -22,6 +22,7 @@ export default function DebugDailyPage() {
   const app = useFirebaseApp();
 
   const handleCreateRoom = async () => {
+    console.log('CURRENT USER:', user);
     if (!user) {
       setError('You must be logged in to create a room.');
       return;
