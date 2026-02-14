@@ -1,39 +1,39 @@
-const functions = require("firebase-functions");
-const fetch = require("node-fetch");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { logger } = require("firebase-functions");
 
-exports.createDailyRoom = functions
-  .region("us-central1")
-  .https.onCall(async (data, context) => {
-    console.log("===== CREATE DAILY ROOM CALLED =====");
-    console.log("CONTEXT AUTH:", context.auth);
+// Node 18+ має глобальний fetch, node-fetch не потрібен
 
-    // 1️⃣ Перевірка авторизації
-    if (!context.auth) {
-      console.log("❌ No auth context received");
-      throw new functions.https.HttpsError(
+exports.createDailyRoom = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    logger.info("===== CREATE DAILY ROOM CALLED =====");
+
+    // ✅ request.auth у v2
+    logger.info("AUTH:", request.auth);
+
+    if (!request.auth) {
+      logger.warn("❌ No auth context received");
+      throw new HttpsError(
         "unauthenticated",
         "User must be authenticated to create a room."
       );
     }
 
-    const uid = context.auth.uid;
-    console.log("✅ Authenticated user:", uid);
+    const uid = request.auth.uid;
+    logger.info("✅ Authenticated user:", uid);
 
-    // 2️⃣ Отримання API ключа
-    const dailyApiKey = functions.config().daily?.key;
+    // ✅ Ключ беремо з Runtime Config (як у тебе зараз)
+    // (functions.config() deprecated, але для тесту працює)
+    const dailyApiKey = require("firebase-functions").config()?.daily?.key;
 
     if (!dailyApiKey) {
-      console.log("❌ DAILY API KEY NOT FOUND");
-      throw new functions.https.HttpsError(
-        "internal",
-        "Daily API key is not configured."
-      );
+      logger.error("❌ DAILY API KEY NOT FOUND (functions.config().daily.key)");
+      throw new HttpsError("internal", "Daily API key is not configured.");
     }
 
-    console.log("✅ Daily API key found");
+    logger.info("✅ Daily API key found");
 
     try {
-      // 3️⃣ Створення кімнати в Daily
       const response = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
         headers: {
@@ -49,27 +49,27 @@ exports.createDailyRoom = functions
       });
 
       const roomData = await response.json();
-
-      console.log("Daily response:", roomData);
+      logger.info("Daily response:", roomData);
 
       if (!response.ok) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           "internal",
           roomData?.error || "Failed to create Daily room."
         );
       }
 
-      console.log("✅ Room created:", roomData.url);
+      logger.info("✅ Room created:", roomData.url);
 
-      return {
-        roomUrl: roomData.url,
-      };
-    } catch (error) {
-      console.error("🔥 ERROR CREATING ROOM:", error);
-
-      throw new functions.https.HttpsError(
+      return { roomUrl: roomData.url };
+    } catch (err) {
+      logger.error("🔥 ERROR CREATING ROOM:", err);
+      if (err instanceof HttpsError) {
+        throw err;
+      }
+      throw new HttpsError(
         "internal",
-        error.message || "Unexpected error creating Daily room."
+        err.message || "Unexpected error creating Daily room."
       );
     }
-  });
+  }
+);
