@@ -31,10 +31,12 @@ export default function DebugDailyPage() {
     setError(null);
     setRoomUrl(null);
     try {
-      const functions = getFunctions(app);
+      await user.getIdToken(true); // Force token refresh
+
+      const functions = getFunctions(app, 'us-central1'); // Specify region
       const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
 
-      const result: any = await createDailyRoom();
+      const result: any = await createDailyRoom({}); // Pass empty object
       console.log(result.data);
 
 
