@@ -8,7 +8,7 @@ exports.createDailyRoom = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError(
       "unauthenticated",
-      "User must be authenticated"
+      "User must be authenticated to create a room."
     );
   }
 
@@ -24,12 +24,18 @@ exports.createDailyRoom = functions.https.onCall(async (data, context) => {
       properties: {
         enable_chat: true,
         enable_screenshare: true,
+        start_audio_off: false,
         start_video_off: false,
       },
     }),
   });
 
   const room = await response.json();
+
+  if (!response.ok) {
+    console.error("Daily.co API error:", room);
+    throw new functions.https.HttpsError("internal", room?.error || "Failed to create Daily.co room");
+  }
 
   return {
     roomUrl: room.url,
