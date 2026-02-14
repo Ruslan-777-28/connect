@@ -26,16 +26,17 @@ exports.createDailyRoom = onCall(
       }),
     });
 
-    logger.info("STATUS:", resp.status);
-
     const raw = await resp.text();
+
+    logger.info("STATUS:", resp.status);
     logger.info("RAW RESPONSE:", raw);
     
-    if (resp.ok) {
-        const data = JSON.parse(raw);
-        return { roomUrl: data.url };
+    if (!resp.ok) {
+      throw new HttpsError("internal", raw);
     }
+    
+    const data = JSON.parse(raw);
 
-    throw new HttpsError("internal", `Daily API Error - Status: ${resp.status}, Body: ${raw}`);
+    return { roomUrl: data.url };
   }
 );
