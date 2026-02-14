@@ -1,10 +1,7 @@
-const { onCall } = require("firebase-functions/v2/https");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
-const admin = require("firebase-admin");
-const fetch = require("node-fetch");
 
-admin.initializeApp();
-
+// ✅ Daily API key зберігаємо як Secret
 const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 
 exports.createDailyRoom = onCall(
@@ -13,35 +10,60 @@ exports.createDailyRoom = onCall(
     secrets: [DAILY_API_KEY],
   },
   async (request) => {
-    if (!request.auth) {
-      throw new Error("User must be authenticated to create a room.");
-    }
+    try {
+      // ✅ auth guard
+      if (!request.auth || !request.auth.uid) {
+        throw new HttpsError("unauthenticated", "User must be authenticated to create a room.");
+      }
 
-    const apiKey = DAILY_API_KEY.value();
+      const apiKey = process.env.DAILY_API_KEY;
+      if (!apiKey) {
+        throw new HttpsError("failed-precondition", "DAILY_API_KEY is missing in function environment.");
+      }
 
-    const response = await fetch("https://api.daily.co/v1/rooms", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
+      // Можеш змінювати параметри кімнати як потрібно
+      const body = {
         properties: {
-          exp: Math.round(Date.now() / 1000) + 60 * 60,
+          enable_chat: true,
+          enable_screenshare: true,
+          start_video_off: false,
+          start_audio_off: false,
+          // exp — опціонально, наприклад 2 години
+          // exp: Math.floor(Date.now() / 1000) + 60 * 60 * 2,
         },
-      }),
-    });
+      };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Daily API error:", errorText);
-      throw new Error("Failed to create Daily room.");
+      const resp = await fetch("https://api.daily.co/v1/rooms", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        // Це найважливіше для дебагу: повернемо текст помилки Daily
+        throw new HttpsError(
+          "internal",
+          `Daily API error (${resp.status}): ${JSON.stringify(data)}`
+        );
+      }
+
+      if (!data || !data.url) {
+        throw new HttpsError("internal", `Daily returned no url: ${JSON.stringify(data)}`);
+      }
+
+      return { roomUrl: data.url };
+    } catch (err) {
+      // Якщо це вже HttpsError — просто прокидаємо далі
+      if (err instanceof HttpsError) throw err;
+
+      // Інакше загортаємо в INTERNAL з текстом
+      const message = err?.message ? String(err.message) : "Unknown error";
+      throw new HttpsError("internal", message);
     }
-
-    const data = await response.json();
-
-    return {
-      roomUrl: data.url,
-    };
   }
 );
