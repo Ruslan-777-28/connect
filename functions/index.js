@@ -33,6 +33,8 @@ exports.createDailyRoom = onCall(
         },
       };
 
+      console.log("HAS_KEY:", !!process.env.DAILY_API_KEY, "LEN:", (process.env.DAILY_API_KEY || "").length);
+
       const resp = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
         headers: {
