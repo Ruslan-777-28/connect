@@ -17,9 +17,6 @@ exports.createDailyRoom = onCall(
       }
 
       const apiKey = process.env.DAILY_API_KEY;
-      if (!apiKey) {
-        throw new HttpsError("failed-precondition", "DAILY_API_KEY is missing in function environment.");
-      }
 
       // Можеш змінювати параметри кімнати як потрібно
       const body = {
@@ -33,7 +30,16 @@ exports.createDailyRoom = onCall(
         },
       };
 
-      console.log("HAS_KEY:", !!process.env.DAILY_API_KEY, "LEN:", (process.env.DAILY_API_KEY || "").length);
+      console.log(
+        "DAILY_API_KEY present:",
+        !!process.env.DAILY_API_KEY,
+        "len:",
+        (process.env.DAILY_API_KEY || "").length
+      );
+
+      if (!process.env.DAILY_API_KEY) {
+        throw new Error("DAILY_API_KEY is missing in function environment");
+      }
 
       const resp = await fetch("https://api.daily.co/v1/rooms", {
         method: "POST",
