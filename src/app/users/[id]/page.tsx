@@ -3,26 +3,46 @@
 import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { doc } from 'firebase/firestore';
-import { useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { useFirestore, useDoc, useMemoFirebase, useUser } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
+import { startCallAction } from '@/lib/actions';
+import { useToast } from '@/hooks/use-toast';
 
 export default function UserProfilePage() {
   const params = useParams();
+  const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const firestore = useFirestore();
+  const { toast } = useToast();
 
   const userDocRef = useMemoFirebase(
-    () => (params.id ? doc(firestore, 'users', params.id as string) : null),
-    [params.id, firestore]
+    () => (id ? doc(firestore, 'users', id) : null),
+    [id, firestore]
   );
 
-  const { data: userProfile, isLoading: loading } =
-    useDoc<UserProfile>(userDocRef);
+  const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
 
+  const handleCallClick = async () => {
+    if (!userProfile) return;
+    try {
+      await startCallAction(userProfile.id);
+      toast({
+        title: 'Calling...',
+        description: `Calling ${userProfile.name}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Could not initiate call.',
+      });
+    }
+  };
+  
   if (loading) {
     return (
       <div className="container mx-auto max-w-4xl px-4 py-8">
@@ -76,7 +96,7 @@ export default function UserProfilePage() {
           <p className="mt-4 text-sm text-muted-foreground">
             Joined on {joinDate}
           </p>
-          <Button variant="outline" size="icon" className="mt-4">
+          <Button variant="outline" size="icon" className="mt-4" onClick={handleCallClick}>
             <Phone className="h-4 w-4" />
           </Button>
         </CardContent>

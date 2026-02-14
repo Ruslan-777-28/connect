@@ -45,6 +45,39 @@
         "name",
         "createdAt"
       ]
+    },
+    "Call": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Call",
+      "type": "object",
+      "description": "Represents a call between two users.",
+      "properties": {
+        "callerUid": {
+          "type": "string",
+          "description": "The UID of the user who initiated the call."
+        },
+        "calleeUid": {
+          "type": "string",
+          "description": "The UID of the user who is being called."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ringing", "accepted", "ended", "declined"]
+        },
+        "roomUrl": {
+          "type": "string",
+          "description": "URL for the video/audio call room."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["callerUid", "calleeUid", "status", "createdAt", "updatedAt"]
     }
   },
   "auth": {
@@ -67,6 +100,22 @@
             {
               "name": "userId",
               "description": "The unique identifier of the user, corresponding to the Firebase Auth UID."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/calls/{callId}",
+        "definition": {
+          "entityName": "Call",
+          "schema": {
+            "$ref": "#/backend/entities/Call"
+          },
+          "description": "Stores information about calls between users.",
+          "params": [
+            {
+              "name": "callId",
+              "description": "The unique identifier for the call."
             }
           ]
         }

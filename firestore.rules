@@ -24,6 +24,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /calls/{callId} {
+      allow create: if request.auth != null
+        && request.resource.data.callerUid == request.auth.uid
+        && request.resource.data.calleeUid is string
+        && request.resource.data.status == "ringing";
+
+      allow read: if request.auth != null
+        && (resource.data.callerUid == request.auth.uid
+         || resource.data.calleeUid == request.auth.uid);
+
+      allow update: if request.auth != null
+        && (resource.data.callerUid == request.auth.uid
+         || resource.data.calleeUid == request.auth.uid);
+
+      allow delete: if false;
+    }
+
     // Deny all access to any other collections by default.
     match /{document=**} {
       allow read, write: if false;

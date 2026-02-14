@@ -6,17 +6,32 @@ import { UserAvatar } from '@/components/user-avatar';
 import type { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
+import { startCallAction } from '@/lib/actions';
+import { useToast } from '@/hooks/use-toast';
 
 interface UserCardProps {
   user: UserProfile;
 }
 
 export function UserCard({ user }: UserCardProps) {
-  const handleCallClick = (e: React.MouseEvent) => {
+  const { toast } = useToast();
+
+  const handleCallClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    // Future call logic will go here
-    console.log(`Calling ${user.name}...`);
+    try {
+      await startCallAction(user.id);
+      toast({
+        title: 'Calling...',
+        description: `Calling ${user.name}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Could not initiate call.',
+      });
+    }
   };
 
   return (
