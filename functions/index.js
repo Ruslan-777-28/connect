@@ -1,44 +1,75 @@
 const functions = require("firebase-functions");
-const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 
-admin.initializeApp();
+exports.createDailyRoom = functions
+  .region("us-central1")
+  .https.onCall(async (data, context) => {
+    console.log("===== CREATE DAILY ROOM CALLED =====");
+    console.log("CONTEXT AUTH:", context.auth);
 
-exports.createDailyRoom = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError(
-      "unauthenticated",
-      "User must be authenticated to create a room."
-    );
-  }
+    // 1️⃣ Перевірка авторизації
+    if (!context.auth) {
+      console.log("❌ No auth context received");
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "User must be authenticated to create a room."
+      );
+    }
 
-  const DAILY_API_KEY = functions.config().daily.key;
+    const uid = context.auth.uid;
+    console.log("✅ Authenticated user:", uid);
 
-  const response = await fetch("https://api.daily.co/v1/rooms", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${DAILY_API_KEY}`,
-    },
-    body: JSON.stringify({
-      properties: {
-        enable_chat: true,
-        enable_screenshare: true,
-        start_audio_off: false,
-        start_video_off: false,
-      },
-    }),
+    // 2️⃣ Отримання API ключа
+    const dailyApiKey = functions.config().daily?.key;
+
+    if (!dailyApiKey) {
+      console.log("❌ DAILY API KEY NOT FOUND");
+      throw new functions.https.HttpsError(
+        "internal",
+        "Daily API key is not configured."
+      );
+    }
+
+    console.log("✅ Daily API key found");
+
+    try {
+      // 3️⃣ Створення кімнати в Daily
+      const response = await fetch("https://api.daily.co/v1/rooms", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${dailyApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          properties: {
+            enable_chat: true,
+            enable_screenshare: true,
+          },
+        }),
+      });
+
+      const roomData = await response.json();
+
+      console.log("Daily response:", roomData);
+
+      if (!response.ok) {
+        throw new functions.https.HttpsError(
+          "internal",
+          roomData?.error || "Failed to create Daily room."
+        );
+      }
+
+      console.log("✅ Room created:", roomData.url);
+
+      return {
+        roomUrl: roomData.url,
+      };
+    } catch (error) {
+      console.error("🔥 ERROR CREATING ROOM:", error);
+
+      throw new functions.https.HttpsError(
+        "internal",
+        error.message || "Unexpected error creating Daily room."
+      );
+    }
   });
-
-  const room = await response.json();
-
-  if (!response.ok) {
-    console.error("Daily.co API error:", room);
-    throw new functions.https.HttpsError("internal", room?.error || "Failed to create Daily.co room");
-  }
-
-  return {
-    roomUrl: room.url,
-    roomName: room.name,
-  };
-});
