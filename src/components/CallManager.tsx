@@ -25,7 +25,7 @@ export function CallManager() {
       user
         ? query(
             collection(firestore, 'calls'),
-            where('calleeUid', '==', user.uid),
+            where('receiverUid', '==', user.uid),
             where('status', '==', 'ringing')
           )
         : null,
@@ -39,7 +39,7 @@ export function CallManager() {
       user
         ? query(
             collection(firestore, 'calls'),
-            where('calleeUid', '==', user.uid),
+            where('receiverUid', '==', user.uid),
             where('status', '==', 'accepted')
           )
         : null,
@@ -89,7 +89,7 @@ export function CallManager() {
     const currentActiveCall = allActiveCalls[0];
 
     if (currentActiveCall) {
-        const otherPartyUid = user?.uid === currentActiveCall.callerUid ? currentActiveCall.calleeUid : currentActiveCall.callerUid;
+        const otherPartyUid = user?.uid === currentActiveCall.callerUid ? currentActiveCall.receiverUid : currentActiveCall.callerUid;
         const fetchOtherPartyProfile = async (call: Call) => {
             const userRef = doc(firestore, 'users', otherPartyUid);
             const userSnap = await getDoc(userRef);

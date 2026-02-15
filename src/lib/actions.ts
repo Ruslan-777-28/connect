@@ -27,26 +27,33 @@ export async function generateFirebaseConfigAction() {
   }
 }
 
-export async function startCallAction(calleeUid: string) {
+export async function startCallAction(receiverUid: string) {
   const callerUid = await getUidFromHttpRequest();
   
-  if (!calleeUid) throw new Error("calleeUid required");
-  if (calleeUid === callerUid) throw new Error("Cannot call yourself");
+  if (!receiverUid) throw new Error("receiverUid required");
+  if (receiverUid === callerUid) throw new Error("Cannot call yourself");
 
   const { firestore } = initializeFirebase();
+  
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
   const callRef = await addDoc(collection(firestore, 'calls'), {
+    type: "video",
+    status: "ringing",
+    roomName: "",
+    roomUrl: "",
     callerUid,
-    calleeUid,
-    status: 'ringing',
-    roomUrl: '',
+    receiverUid,
     createdAt: serverTimestamp(),
+    expiresAt,
+    acceptedAt: null,
+    endedAt: null,
     updatedAt: serverTimestamp(),
   });
 
   try {
-    const DAILY_API_KEY = process.env.DAILY_API_KEY;
-    if (!DAILY_API_KEY) {
+    const apiKey = process.env.DAILY_API_KEY;
+    if (!apiKey) {
         throw new Error("DAILY_API_KEY is not set in the environment variables.");
     }
     
@@ -54,29 +61,35 @@ export async function startCallAction(calleeUid: string) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${DAILY_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
+          privacy: "private",
           properties: {
             enable_chat: true,
             enable_screenshare: true,
             start_audio_off: false,
             start_video_off: false,
+            exp: Math.floor(expiresAt.getTime() / 1000), 
           },
         }),
       });
 
-    const room = await response.json() as { url?: string, error?: string };
+    const rawResponse = await response.text();
+    const room = JSON.parse(rawResponse);
 
-    if (!response.ok || !room.url) {
-      console.error("Daily.co API error:", room);
+    if (!response.ok || !room.url || !room.name) {
+      console.error("Daily.co API error:", rawResponse);
       throw new Error(room?.error || "Failed to create Daily.co room");
     }
 
     await updateDoc(callRef, {
         roomUrl: room.url,
+        roomName: room.name,
         updatedAt: serverTimestamp(),
     });
+
+    return { callId: callRef.id, roomUrl: room.url };
 
   } catch(error) {
     await updateDoc(callRef, {
@@ -85,8 +98,6 @@ export async function startCallAction(calleeUid: string) {
     }).catch(updateError => console.error("Failed to update call status after room creation failure:", updateError));
     throw error;
   }
-  
-  return { callId: callRef.id };
 }
 
 export async function respondToCallAction(callId: string, action: 'accept' | 'decline' | 'end') {
@@ -102,9 +113,9 @@ export async function respondToCallAction(callId: string, action: 'accept' | 'de
         
         const callData = callDoc.data();
         const isCaller = callData.callerUid === uid;
-        const isCallee = callData.calleeUid === uid;
+        const isReceiver = callData.receiverUid === uid;
         
-        if (!isCaller && !isCallee) {
+        if (!isCaller && !isReceiver) {
             throw new Error("You are not authorized to perform this action on this call.");
         }
         
@@ -112,12 +123,12 @@ export async function respondToCallAction(callId: string, action: 'accept' | 'de
 
         switch(action) {
             case 'accept':
-                if (!isCallee) throw new Error("Only the recipient can accept a call.");
+                if (!isReceiver) throw new Error("Only the recipient can accept a call.");
                 if (callData.status !== 'ringing') throw new Error("Call is not ringing or has already been answered.");
                 nextStatus = 'accepted';
                 break;
             case 'decline':
-                if (!isCallee) throw new Error("Only the recipient can decline a call.");
+                if (!isReceiver) throw new Error("Only the recipient can decline a call.");
                 if (callData.status !== 'ringing') throw new Error("Call is not ringing or has already been answered.");
                 nextStatus = 'ended';
                 break;

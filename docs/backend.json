@@ -56,17 +56,25 @@
           "type": "string",
           "description": "The UID of the user who initiated the call."
         },
-        "calleeUid": {
+        "receiverUid": {
           "type": "string",
           "description": "The UID of the user who is being called."
         },
         "status": {
           "type": "string",
-          "enum": ["ringing", "accepted", "ended", "declined"]
+          "enum": ["ringing", "accepted", "ended", "declined", "missed", "expired"]
         },
         "roomUrl": {
           "type": "string",
           "description": "URL for the video/audio call room."
+        },
+        "roomName": {
+          "type": "string",
+          "description": "Name of the video/audio call room."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["video"]
         },
         "createdAt": {
           "type": "string",
@@ -75,9 +83,29 @@
         "updatedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "acceptedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "callerActingAs": {
+            "type": "string",
+            "enum": ["client", "pro"]
+        },
+        "receiverActingAs": {
+            "type": "string",
+            "enum": ["client", "pro"]
         }
       },
-      "required": ["callerUid", "calleeUid", "status", "createdAt", "updatedAt"]
+      "required": ["callerUid", "receiverUid", "status", "createdAt", "updatedAt", "type", "expiresAt"]
     }
   },
   "auth": {

@@ -38,7 +38,7 @@ export default function CallPage() {
       return;
     }
     
-    if(user.uid !== call.callerUid && user.uid !== call.calleeUid) {
+    if(user.uid !== call.callerUid && user.uid !== call.receiverUid) {
         toast({
             variant: 'destructive',
             title: 'Unauthorized',

@@ -13,10 +13,17 @@ export type UserProfile = {
 export type Call = {
   id: string;
   callerUid: string;
-  calleeUid: string;
-  status: 'ringing' | 'accepted' | 'ended' | 'declined';
+  receiverUid: string;
+  status: 'ringing' | 'accepted' | 'ended' | 'declined' | 'missed' | 'expired';
   roomUrl?: string;
+  roomName?: string;
+  type: 'video';
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  expiresAt: Timestamp;
+  acceptedAt: Timestamp | null;
+  endedAt: Timestamp | null;
   caller?: UserProfile;
+  callerActingAs?: 'client' | 'pro';
+  receiverActingAs?: 'client' | 'pro';
 };
