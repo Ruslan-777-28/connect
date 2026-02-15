@@ -4,6 +4,31 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
+async function createDailyMeetingToken(apiKey, roomName, userId, isOwner = false) {
+  const resp = await fetch("https://api.daily.co/v1/meeting-tokens", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      properties: {
+        room_name: roomName,
+        user_id: userId,
+        is_owner: !!isOwner,
+        exp: Math.floor(Date.now() / 1000) + 60 * 30, // 30 хв
+      },
+    }),
+  });
+
+  const raw = await resp.text();
+  if (!resp.ok) {
+    throw new Error(`Daily meeting-token error (${resp.status}): ${raw}`);
+  }
+  const data = JSON.parse(raw);
+  return data.token;
+}
+
 exports.createDailyRoom = onCall(
   { region: "us-central1", secrets: ["DAILY_API_KEY"] },
   async (request) => {
@@ -56,6 +81,9 @@ exports.createDailyRoom = onCall(
     const room = JSON.parse(raw);
     const roomUrl = room.url;
 
+    const token = await createDailyMeetingToken(apiKey, roomName, request.auth.uid, true);
+    const callerJoinUrl = `${roomUrl}?t=${token}`;
+
     // 3) пишемо документ дзвінка
     const now = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(
@@ -84,11 +112,11 @@ exports.createDailyRoom = onCall(
     });
 
     // 4) повертаємо все що потрібно фронту
-    return { callId, roomUrl };
+    return { callId, callerJoinUrl };
   }
 );
 
-exports.acceptCall = onCall({ region: "us-central1" }, async (request) => {
+exports.acceptCall = onCall({ region: "us-central1", secrets: ["DAILY_API_KEY"] }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
 
   const { callId } = request.data || {};
@@ -129,7 +157,13 @@ exports.acceptCall = onCall({ region: "us-central1" }, async (request) => {
     return { roomUrl: call.roomUrl, roomName: call.roomName };
   });
 
-  return result;
+  const apiKey = process.env.DAILY_API_KEY;
+  if (!apiKey) throw new HttpsError("internal", "Missing DAILY_API_KEY secret.");
+
+  const token = await createDailyMeetingToken(apiKey, result.roomName, request.auth.uid, false);
+  const receiverJoinUrl = `${result.roomUrl}?t=${token}`;
+
+  return { callId, receiverJoinUrl };
 });
 
 
