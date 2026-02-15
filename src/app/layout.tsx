@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { CallManager } from '@/components/CallManager';
+import { IncomingCallManager } from '@/components/IncomingCallManager';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -25,6 +26,7 @@ export default function RootLayout({
         <FirebaseClientProvider>
           <FirebaseErrorListener />
           <CallManager />
+          <IncomingCallManager />
           <div className="flex min-h-screen w-full flex-col">
             <Header />
             <main className="flex-1">{children}</main>

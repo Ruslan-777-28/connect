@@ -1,39 +1,21 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useEffect } from 'react';
 import {
   useUser,
   useFirestore,
   useCollection,
   useMemoFirebase,
 } from '@/firebase';
-import { collection, query, where, doc, getDoc } from 'firebase/firestore';
-import type { Call, UserProfile } from '@/lib/types';
-import { IncomingCallToast } from './IncomingCallToast';
-import { ActiveCallBar } from './ActiveCallBar';
+import { collection, query, where } from 'firebase/firestore';
+import type { Call } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 
 export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
-  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
-  const [activeCall, setActiveCall] = useState<Call | null>(null);
   const router = useRouter();
   const pathname = usePathname();
-
-  const incomingCallsQuery = useMemoFirebase(
-    () =>
-      user
-        ? query(
-            collection(firestore, 'calls'),
-            where('receiverUid', '==', user.uid),
-            where('status', '==', 'ringing')
-          )
-        : null,
-    [user, firestore]
-  );
-
-  const { data: incomingCalls } = useCollection<Call>(incomingCallsQuery);
 
   const activeCallsAsCallerQuery = useMemoFirebase(() => {
     if (!user) return null;
@@ -53,73 +35,40 @@ export function CallManager() {
     );
   }, [user, firestore]);
 
-  const { data: activeCallsAsCaller } = useCollection<Call>(activeCallsAsCallerQuery);
-  const { data: activeCallsAsReceiver } = useCollection<Call>(activeCallsAsReceiverQuery);
+  const { data: activeCallsAsCaller } =
+    useCollection<Call>(activeCallsAsCallerQuery);
+  const { data: activeCallsAsReceiver } =
+    useCollection<Call>(activeCallsAsReceiverQuery);
 
   useEffect(() => {
-    const fetchCallerProfile = async (call: Call) => {
-      if (!firestore) return call;
-      const userRef = doc(firestore, 'users', call.callerUid);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        return { ...call, caller: userSnap.data() as UserProfile };
-      }
-      return call;
-    };
-    
-    if (incomingCalls && incomingCalls.length > 0) {
-        fetchCallerProfile(incomingCalls[0]).then(callWithProfile => {
-            setIncomingCall(callWithProfile);
-            setActiveCall(null);
-        });
-    } else {
-      setIncomingCall(null);
-    }
-  }, [incomingCalls, firestore]);
-  
-  useEffect(() => {
-    const allActiveCalls = [...(activeCallsAsCaller || []), ...(activeCallsAsReceiver || [])];
-    const currentCall = allActiveCalls.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis())[0];
+    const allActiveCalls = [
+      ...(activeCallsAsCaller || []),
+      ...(activeCallsAsReceiver || []),
+    ];
+    const currentCall = allActiveCalls.sort(
+      (a, b) =>
+        (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)
+    )[0];
 
     if (currentCall) {
-        if (pathname === `/call/${currentCall.id}`) {
-          setActiveCall(null);
-          return;
-        }
+      if (pathname === `/call/${currentCall.id}`) {
+        // Already on the call page, do nothing.
+        return;
+      }
 
-        const otherPartyUid = user?.uid === currentCall.callerUid ? currentCall.receiverUid : currentCall.callerUid;
-        const fetchOtherPartyProfile = async (call: Call) => {
-            if (!firestore) return call;
-            const userRef = doc(firestore, 'users', otherPartyUid);
-            const userSnap = await getDoc(userRef);
-            if(userSnap.exists()){
-                return {...call, caller: userSnap.data() as UserProfile}
-            }
-            return call;
-        }
-
-        if (currentCall.status === 'accepted') {
-          router.push(`/call/${currentCall.id}`);
-          setActiveCall(null);
-        } else if (currentCall.status === 'ringing' && user?.uid === currentCall.callerUid) {
-          router.push(`/call/${currentCall.id}`);
-          setActiveCall(null);
-        } else {
-          setActiveCall(null);
-        }
-    } else {
-        setActiveCall(null);
+      if (currentCall.status === 'accepted') {
+        router.push(`/call/${currentCall.id}`);
+      } else if (
+        currentCall.status === 'ringing' &&
+        user?.uid === currentCall.callerUid
+      ) {
+        // The caller initiated and should be redirected to the waiting page
+        router.push(`/call/${currentCall.id}`);
+      }
     }
-  }, [activeCallsAsCaller, activeCallsAsReceiver, firestore, user?.uid, router, pathname]);
+  }, [activeCallsAsCaller, activeCallsAsReceiver, user?.uid, router, pathname]);
 
-  if (incomingCall) {
-    return <IncomingCallToast call={incomingCall} />;
-  }
-
-  // ActiveCallBar is commented out as the logic now redirects to the call page
-  // if (activeCall) {
-  //   return <ActiveCallBar call={activeCall} />;
-  // }
-
+  // This component no longer renders UI, it only handles redirection.
+  // Incoming call UI is handled by IncomingCallManager.
   return null;
 }
