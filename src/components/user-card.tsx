@@ -8,9 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useFirebaseApp, useUser } from '@/firebase';
-
+import { startVideoCall } from '@/lib/calls';
 
 interface UserCardProps {
   user: UserProfile;
@@ -37,27 +36,20 @@ export function UserCard({ user }: UserCardProps) {
     if (isCalling) return;
 
     setIsCalling(true);
+    toast({
+      title: 'Calling...',
+      description: `Calling ${user.name}. You will be redirected shortly.`,
+    });
     try {
-      const functions = getFunctions(app, 'us-central1');
-      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
-
-      await createDailyRoom({
-        receiverUid: user.id,
-        callerActingAs: 'client',
-      });
-
-      toast({
-        title: 'Calling...',
-        description: `Calling ${user.name}.`,
-      });
+      await startVideoCall(app, user.id);
+      // On success, CallManager handles redirection. No need to setIsCalling(false).
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
-    } finally {
-      setIsCalling(false);
+      setIsCalling(false); // Reset only on error
     }
   };
 
@@ -76,7 +68,7 @@ export function UserCard({ user }: UserCardProps) {
             size="icon"
             className="mt-4"
             onClick={handleCallClick}
-            disabled={isCalling}
+            disabled={isCalling || currentUser?.uid === user.id}
           >
             <Phone className="h-4 w-4" />
           </Button>

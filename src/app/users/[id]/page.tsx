@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { startVideoCall } from '@/lib/calls';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -41,27 +41,20 @@ export default function UserProfilePage() {
     if (isCalling) return;
 
     setIsCalling(true);
+    toast({
+      title: 'Calling...',
+      description: `Calling ${userProfile.name}. You will be redirected shortly.`,
+    });
     try {
-      const functions = getFunctions(app, 'us-central1');
-      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
-
-      await createDailyRoom({
-        receiverUid: userProfile.id,
-        callerActingAs: 'client',
-      });
-
-      toast({
-        title: 'Calling...',
-        description: `Calling ${userProfile.name}.`,
-      });
+      await startVideoCall(app, userProfile.id);
+      // On success, CallManager handles redirection. No need to setIsCalling(false).
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
-    } finally {
-      setIsCalling(false);
+      setIsCalling(false); // Reset only on error
     }
   };
   
@@ -118,9 +111,17 @@ export default function UserProfilePage() {
           <p className="mt-4 text-sm text-muted-foreground">
             Joined on {joinDate}
           </p>
-          <Button variant="outline" size="icon" className="mt-4" onClick={handleCallClick} disabled={isCalling}>
-            <Phone className="h-4 w-4" />
-          </Button>
+          {currentUser && currentUser.uid !== userProfile.id && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="mt-4"
+              onClick={handleCallClick}
+              disabled={isCalling}
+            >
+              <Phone className="h-4 w-4" />
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>
