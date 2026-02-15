@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useUser, useFirestore, useFirebaseApp } from '@/firebase';
+import { useFirebaseApp, useUser } from '@/firebase';
 import {
+  getFirestore,
   collection,
   query,
   where,
@@ -12,16 +13,19 @@ import {
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export function IncomingCallManager() {
-  const { user } = useUser();
-  const firestore = useFirestore();
+  const { user, isUserLoading } = useUser();
   const app = useFirebaseApp();
+
   const handlingRef = useRef(false);
 
   useEffect(() => {
-    if (!user?.uid || !firestore || !app) return;
+    if (isUserLoading || !user?.uid || !app) return;
+
+    const db = getFirestore(app);
+    const functions = getFunctions(app, 'us-central1');
 
     const q = query(
-      collection(firestore, 'calls'),
+      collection(db, 'calls'),
       where('receiverUid', '==', user.uid),
       where('status', '==', 'ringing'),
       limit(1)
@@ -36,37 +40,41 @@ export function IncomingCallManager() {
       const callId = docSnap.id;
       const call = docSnap.data();
 
-      // простий анти-дубль, щоб не відкривало 10 разів
       handlingRef.current = true;
 
       try {
         const ok = window.confirm(
-          `Incoming video call from ${call.callerUid}\n\nAccept?`
+          `Incoming video call\n\nFrom: ${
+            call.callerUid
+          }\nRole: ${call.callerActingAs ?? 'unknown'}\n\nAccept?`
         );
-
-        const functions = getFunctions(app, 'us-central1');
 
         if (ok) {
           const acceptCall = httpsCallable(functions, 'acceptCall');
           const res: any = await acceptCall({ callId });
           const roomUrl = res.data?.roomUrl;
+
           if (roomUrl) {
             window.open(roomUrl, '_blank', 'noopener,noreferrer');
+          } else {
+            alert('Accepted, but roomUrl is missing.');
           }
         } else {
           const endCall = httpsCallable(functions, 'endCall');
           await endCall({ callId, reason: 'declined' });
         }
+      } catch (e: any) {
+        console.error('IncomingCallManager error:', e);
+        alert(e?.message ?? 'Incoming call error');
       } finally {
-        // даємо змогу приймати наступні дзвінки
         setTimeout(() => {
           handlingRef.current = false;
-        }, 1000);
+        }, 800);
       }
     });
 
     return () => unsub();
-  }, [user, firestore, app]);
+  }, [app, user?.uid, isUserLoading]);
 
   return null;
 }
