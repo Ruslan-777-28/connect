@@ -52,12 +52,12 @@ export function IncomingCallManager() {
         if (ok) {
           const acceptCall = httpsCallable(functions, 'acceptCall');
           const res: any = await acceptCall({ callId });
-          const roomUrl = res.data?.roomUrl;
+          const receiverJoinUrl = res.data?.receiverJoinUrl;
 
-          if (roomUrl) {
-            window.open(roomUrl, '_blank', 'noopener,noreferrer');
+          if (receiverJoinUrl) {
+            window.open(receiverJoinUrl, '_blank', 'noopener,noreferrer');
           } else {
-            alert('Accepted, but roomUrl is missing.');
+            alert('Accepted, but join URL is missing.');
           }
         } else {
           const endCall = httpsCallable(functions, 'endCall');

@@ -2,20 +2,50 @@
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { FirebaseApp } from 'firebase/app';
+import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
-/**
- * Initiates a video call by creating a call document in Firestore via a cloud function.
- * The global CallManager component will then detect the new 'ringing' call and handle redirection.
- * @param app The Firebase app instance.
- * @param receiverUid The UID of the user to call.
- */
-export async function startVideoCall(app: FirebaseApp, receiverUid: string) {
-  const functions = getFunctions(app, 'us-central1');
-  const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
+export function startVideoCall(app: FirebaseApp, receiverUid: string): Promise<{ callId: string }> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const functions = getFunctions(app, 'us-central1');
+      const db = getFirestore(app);
 
-  // This will create the call document with status 'ringing'
-  await createDailyRoom({
-    receiverUid,
-    callerActingAs: 'client',
+      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
+      const res: any = await createDailyRoom({
+        receiverUid,
+        callerActingAs: 'client',
+      });
+
+      const { callId, callerJoinUrl } = res.data as { callId: string; callerJoinUrl: string };
+
+      if (!callerJoinUrl) {
+        throw new Error('callerJoinUrl not returned from function.');
+      }
+
+      const unsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
+        if (!snap.exists()) {
+          unsub();
+          alert('Call document was unexpectedly deleted.');
+          resolve({ callId });
+          return;
+        }
+        const call = snap.data();
+
+        if (call.status === 'accepted') {
+          window.open(callerJoinUrl, '_blank', 'noopener,noreferrer');
+          unsub();
+          resolve({ callId });
+        }
+
+        if (['ended', 'expired', 'missed', 'declined'].includes(call.status)) {
+          unsub();
+          alert(`Call ${call.status}`);
+          resolve({ callId });
+        }
+      });
+
+    } catch (error) {
+      reject(error);
+    }
   });
 }

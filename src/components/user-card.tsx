@@ -38,18 +38,22 @@ export function UserCard({ user }: UserCardProps) {
     setIsCalling(true);
     toast({
       title: 'Calling...',
-      description: `Calling ${user.name}. You will be redirected shortly.`,
+      description: `Calling ${user.name}. Please wait for them to accept.`,
     });
+    
     try {
+      // This function now internally waits for the call to be resolved (accepted/ended)
       await startVideoCall(app, user.id);
-      // On success, CallManager handles redirection. No need to setIsCalling(false).
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
-      setIsCalling(false); // Reset only on error
+    } finally {
+      // This will run after the call is accepted, ended, or fails,
+      // re-enabling the call button.
+      setIsCalling(false);
     }
   };
 

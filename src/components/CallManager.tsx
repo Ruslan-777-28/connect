@@ -41,34 +41,26 @@ export function CallManager() {
     useCollection<Call>(activeCallsAsReceiverQuery);
 
   useEffect(() => {
+    // This logic is now mostly handled by startVideoCall (for the caller)
+    // and IncomingCallManager (for the receiver), which use window.open.
+    // The previous redirection logic is disabled to prevent conflicts.
+    // This component could be repurposed later for "re-join" functionality
+    // or if the window.open flow is replaced with in-app navigation.
     const allActiveCalls = [
       ...(activeCallsAsCaller || []),
       ...(activeCallsAsReceiver || []),
     ];
-    const currentCall = allActiveCalls.sort(
-      (a, b) =>
-        (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0)
-    )[0];
+    const currentCall = allActiveCalls.find(c => c.status === 'accepted');
 
     if (currentCall) {
-      if (pathname === `/call/${currentCall.id}`) {
-        // Already on the call page, do nothing.
-        return;
-      }
-
-      if (currentCall.status === 'accepted') {
-        router.push(`/call/${currentCall.id}`);
-      } else if (
-        currentCall.status === 'ringing' &&
-        user?.uid === currentCall.callerUid
-      ) {
-        // The caller initiated and should be redirected to the waiting page
-        router.push(`/call/${currentCall.id}`);
-      }
+      // If the user is in the app, but not on the call page, maybe we want to show a "Return to call" banner.
+      // For now, this is disabled to avoid interference with the window.open flow.
+      // if (pathname !== `/call/${currentCall.id}`) {
+      //   console.log("Active call detected, but not redirecting.", currentCall.id);
+      // }
     }
+    
   }, [activeCallsAsCaller, activeCallsAsReceiver, user?.uid, router, pathname]);
 
-  // This component no longer renders UI, it only handles redirection.
-  // Incoming call UI is handled by IncomingCallManager.
   return null;
 }
