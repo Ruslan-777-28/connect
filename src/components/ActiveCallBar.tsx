@@ -1,12 +1,13 @@
 'use client';
 
-import { respondToCallAction } from '@/lib/actions';
 import type { Call } from '@/lib/types';
 import { Button } from './ui/button';
 import { Card } from './ui/card';
 import { UserAvatar } from './user-avatar';
 import { PhoneOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirebaseApp } from '@/firebase';
 
 interface ActiveCallBarProps {
   call: Call;
@@ -14,15 +15,18 @@ interface ActiveCallBarProps {
 
 export function ActiveCallBar({ call }: ActiveCallBarProps) {
   const { toast } = useToast();
+  const app = useFirebaseApp();
 
   const handleEndCall = async () => {
     try {
-      await respondToCallAction(call.id, 'end');
+      const functions = getFunctions(app, 'us-central1');
+      const endCall = httpsCallable(functions, 'endCall');
+      await endCall({ callId: call.id });
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to end call.',
+        description: error.message || 'Failed to end call.',
       });
     }
   };

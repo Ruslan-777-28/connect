@@ -1,49 +1,45 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---------- Helpers ----------
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
-    match /users/{userId} {
-      // Any signed-in user can view profiles and list users.
-      allow get, list: if isSignedIn();
-
-      // Users can only create their own profile, ensuring the doc ID matches the auth UID.
-      allow create: if isOwner(userId) && request.resource.data.id == userId;
-      
-      // Users can only update their own profile, and cannot change the 'id' field.
-      allow update: if isOwner(userId) && request.resource.data.id == resource.data.id;
-      
-      // Deleting user profiles is not allowed.
-      allow delete: if false;
-    }
-
-    match /calls/{callId} {
-      allow create: if request.auth != null
-        && request.resource.data.callerUid == request.auth.uid
-        && request.resource.data.receiverUid is string
-        && request.resource.data.status == "ringing";
-
-      allow read: if request.auth != null
+    function isCallParticipant() {
+      return isSignedIn()
         && (resource.data.callerUid == request.auth.uid
-         || resource.data.receiverUid == request.auth.uid);
-
-      allow update: if request.auth != null
-        && (resource.data.callerUid == request.auth.uid
-         || resource.data.receiverUid == request.auth.uid);
-
-      allow delete: if false;
+            || resource.data.receiverUid == request.auth.uid);
     }
 
-    // Deny all access to any other collections by default.
+    // ---------- Default: deny ----------
     match /{document=**} {
       allow read, write: if false;
+    }
+
+    // ---------- Users ----------
+    // Мінімально: юзер може читати (авториз.), змінювати тільки свій профіль
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid);
+      allow delete: if false;
+    }
+
+    // ---------- Calls (1:1 video) ----------
+    // ВАЖЛИВО: створення/оновлення робиться Cloud Functions, клієнт тільки читає
+    match /calls/{callId} {
+      // учасники можуть читати (слухати статус)
+      allow read: if isCallParticipant();
+
+      // ніхто з клієнта не створює/не змінює/не видаляє
+      allow create, update, delete: if false;
     }
   }
 }
