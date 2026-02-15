@@ -1,23 +1,26 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { doc } from 'firebase/firestore';
-import { useFirestore, useDoc, useMemoFirebase, useUser } from '@/firebase';
+import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
-import { startCallAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function UserProfilePage() {
   const params = useParams();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const firestore = useFirestore();
   const { toast } = useToast();
+  const app = useFirebaseApp();
+  const { user: currentUser } = useUser();
+  const [isCalling, setIsCalling] = useState(false);
 
   const userDocRef = useMemoFirebase(
     () => (id ? doc(firestore, 'users', id) : null),
@@ -27,9 +30,27 @@ export default function UserProfilePage() {
   const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
 
   const handleCallClick = async () => {
-    if (!userProfile) return;
+    if (!userProfile || !currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'You must be logged in to place a call.',
+      });
+      return;
+    }
+    if (isCalling) return;
+
+    setIsCalling(true);
     try {
-      await startCallAction(userProfile.id);
+      const functions = getFunctions(app, 'us-central1');
+      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
+
+      await createDailyRoom({
+        receiverUid: userProfile.id,
+        callerActingAs: 'client',
+        receiverActingAs: 'pro',
+      });
+
       toast({
         title: 'Calling...',
         description: `Calling ${userProfile.name}.`,
@@ -40,6 +61,8 @@ export default function UserProfilePage() {
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
+    } finally {
+      setIsCalling(false);
     }
   };
   
@@ -96,7 +119,7 @@ export default function UserProfilePage() {
           <p className="mt-4 text-sm text-muted-foreground">
             Joined on {joinDate}
           </p>
-          <Button variant="outline" size="icon" className="mt-4" onClick={handleCallClick}>
+          <Button variant="outline" size="icon" className="mt-4" onClick={handleCallClick} disabled={isCalling}>
             <Phone className="h-4 w-4" />
           </Button>
         </CardContent>

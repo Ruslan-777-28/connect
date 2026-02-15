@@ -6,8 +6,11 @@ import { UserAvatar } from '@/components/user-avatar';
 import type { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
-import { startCallAction } from '@/lib/actions';
 import { useToast } from '@/hooks/use-toast';
+import { useState } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { useFirebaseApp, useUser } from '@/firebase';
+
 
 interface UserCardProps {
   user: UserProfile;
@@ -15,12 +18,35 @@ interface UserCardProps {
 
 export function UserCard({ user }: UserCardProps) {
   const { toast } = useToast();
+  const app = useFirebaseApp();
+  const { user: currentUser } = useUser();
+  const [isCalling, setIsCalling] = useState(false);
 
   const handleCallClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
+
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Authentication Error',
+        description: 'You must be logged in to place a call.',
+      });
+      return;
+    }
+    if (isCalling) return;
+
+    setIsCalling(true);
     try {
-      await startCallAction(user.id);
+      const functions = getFunctions(app, 'us-central1');
+      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
+
+      await createDailyRoom({
+        receiverUid: user.id,
+        callerActingAs: 'client',
+        receiverActingAs: 'pro',
+      });
+
       toast({
         title: 'Calling...',
         description: `Calling ${user.name}.`,
@@ -31,6 +57,8 @@ export function UserCard({ user }: UserCardProps) {
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
+    } finally {
+      setIsCalling(false);
     }
   };
 
@@ -49,6 +77,7 @@ export function UserCard({ user }: UserCardProps) {
             size="icon"
             className="mt-4"
             onClick={handleCallClick}
+            disabled={isCalling}
           >
             <Phone className="h-4 w-4" />
           </Button>

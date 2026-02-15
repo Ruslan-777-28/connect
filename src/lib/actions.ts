@@ -2,10 +2,9 @@
 
 import { generateFirebaseConfig } from '@/ai/flows/generate-firebase-config';
 import { initializeFirebase } from '@/firebase';
-import { addDoc, collection, doc, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { headers } from 'next/headers';
 import { admin } from './firebase-admin';
-import fetch from 'node-fetch';
 
 async function getUidFromHttpRequest() {
     const authHeader = headers().get("authorization") || "";
@@ -24,79 +23,6 @@ export async function generateFirebaseConfigAction() {
   } catch (error) {
     console.error(error);
     return { success: false, error: 'Failed to generate Firebase config.' };
-  }
-}
-
-export async function startCallAction(receiverUid: string) {
-  const callerUid = await getUidFromHttpRequest();
-  
-  if (!receiverUid) throw new Error("receiverUid required");
-  if (receiverUid === callerUid) throw new Error("Cannot call yourself");
-
-  const { firestore } = initializeFirebase();
-  
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
-
-  const callRef = await addDoc(collection(firestore, 'calls'), {
-    type: "video",
-    status: "ringing",
-    roomName: "",
-    roomUrl: "",
-    callerUid,
-    receiverUid,
-    createdAt: serverTimestamp(),
-    expiresAt,
-    acceptedAt: null,
-    endedAt: null,
-    updatedAt: serverTimestamp(),
-  });
-
-  try {
-    const apiKey = process.env.DAILY_API_KEY;
-    if (!apiKey) {
-        throw new Error("DAILY_API_KEY is not set in the environment variables.");
-    }
-    
-    const response = await fetch("https://api.daily.co/v1/rooms", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          privacy: "private",
-          properties: {
-            enable_chat: true,
-            enable_screenshare: true,
-            start_audio_off: false,
-            start_video_off: false,
-            exp: Math.floor(expiresAt.getTime() / 1000), 
-          },
-        }),
-      });
-
-    const rawResponse = await response.text();
-    const room = JSON.parse(rawResponse);
-
-    if (!response.ok || !room.url || !room.name) {
-      console.error("Daily.co API error:", rawResponse);
-      throw new Error(room?.error || "Failed to create Daily.co room");
-    }
-
-    await updateDoc(callRef, {
-        roomUrl: room.url,
-        roomName: room.name,
-        updatedAt: serverTimestamp(),
-    });
-
-    return { callId: callRef.id, roomUrl: room.url };
-
-  } catch(error) {
-    await updateDoc(callRef, {
-        status: 'ended',
-        updatedAt: serverTimestamp()
-    }).catch(updateError => console.error("Failed to update call status after room creation failure:", updateError));
-    throw error;
   }
 }
 
