@@ -63,15 +63,17 @@ export function UserCard({ user }: UserCardProps) {
           />
           <h3 className="text-lg font-semibold text-foreground">{user.name}</h3>
           <p className="text-sm text-muted-foreground">{user.email}</p>
-          <Button
-            variant="outline"
-            size="icon"
-            className="mt-4"
-            onClick={handleCallClick}
-            disabled={isCalling || currentUser?.uid === user.id}
-          >
-            <Phone className="h-4 w-4" />
-          </Button>
+          {currentUser && currentUser.uid !== user.id && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="mt-4"
+              onClick={handleCallClick}
+              disabled={isCalling}
+            >
+              <Phone className="h-4 w-4" />
+            </Button>
+          )}
         </CardContent>
       </Card>
     </Link>
