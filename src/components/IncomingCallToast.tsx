@@ -34,8 +34,8 @@ export function IncomingCallToast({ call }: IncomingCallToastProps) {
   const handleDecline = async () => {
     try {
       const functions = getFunctions(app, 'us-central1');
-      const declineCall = httpsCallable(functions, 'declineCall');
-      await declineCall({ callId: call.id });
+      const endCall = httpsCallable(functions, 'endCall');
+      await endCall({ callId: call.id, reason: 'declined' });
     } catch (error: any) {
       toast({
         variant: 'destructive',

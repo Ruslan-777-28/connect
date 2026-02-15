@@ -26,4 +26,6 @@ export type Call = {
   caller?: UserProfile;
   callerActingAs?: 'client' | 'pro';
   receiverActingAs?: 'client' | 'pro';
+  endReason?: string | null;
+  endedBy?: string | null;
 };

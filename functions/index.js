@@ -89,116 +89,85 @@ exports.createDailyRoom = onCall(
 );
 
 exports.acceptCall = onCall({ region: "us-central1" }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
+  if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
 
   const { callId } = request.data || {};
   if (!callId || typeof callId !== "string") {
     throw new HttpsError("invalid-argument", "callId is required.");
   }
 
-  const callRef = admin.firestore().collection("calls").doc(callId);
-  const snap = await callRef.get();
+  const ref = admin.firestore().collection("calls").doc(callId);
 
-  if (!snap.exists) {
-    throw new HttpsError("not-found", "Call not found.");
-  }
+  const result = await admin.firestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Call not found.");
 
-  const call = snap.data();
-
-  // тільки адресат може прийняти
-  if (call.receiverUid !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Only receiver can accept this call.");
-  }
-
-  if (call.status !== "ringing") {
-    throw new HttpsError("failed-precondition", `Call is not ringing (status=${call.status}).`);
-  }
-
-  // expiry check
-  const nowMs = Date.now();
-  const expiresAtMs = call.expiresAt?.toMillis?.() ?? 0;
-  if (expiresAtMs && nowMs > expiresAtMs) {
-    await callRef.update({
-      status: "expired",
-      endedAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-    throw new HttpsError("deadline-exceeded", "Call expired.");
-  }
-
-  await callRef.update({
-    status: "accepted",
-    acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  // Повертаємо roomUrl (щоб професіонал одразу відкрив кімнату)
-  return { callId, roomUrl: call.roomUrl };
-});
-
-
-exports.declineCall = onCall({ region: "us-central1" }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "User must be authenticated.");
-    }
-    const { callId } = request.data || {};
-    if (!callId) {
-        throw new HttpsError("invalid-argument", "callId is required.");
-    }
-
-    const callRef = admin.firestore().collection("calls").doc(callId);
-    const snap = await callRef.get();
-    if (!snap.exists) {
-        throw new HttpsError("not-found", "Call not found.");
-    }
     const call = snap.data();
 
     if (call.receiverUid !== request.auth.uid) {
-        throw new HttpsError("permission-denied", "Only receiver can decline this call.");
+      throw new HttpsError("permission-denied", "Only receiver can accept.");
     }
 
     if (call.status !== "ringing") {
-        throw new HttpsError("failed-precondition", `Call is not ringing (status=${call.status}).`);
+      throw new HttpsError("failed-precondition", `Cannot accept: status=${call.status}`);
     }
 
-    await callRef.update({
-        status: "declined",
+    const expiresAtMs = call.expiresAt?.toMillis?.() ?? 0;
+    if (expiresAtMs && Date.now() > expiresAtMs) {
+      tx.update(ref, {
+        status: "expired",
         endedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      throw new HttpsError("deadline-exceeded", "Call expired.");
+    }
+
+    tx.update(ref, {
+      status: "accepted",
+      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return { callId };
+
+    return { roomUrl: call.roomUrl, roomName: call.roomName };
+  });
+
+  return result;
 });
 
+
 exports.endCall = onCall({ region: "us-central1" }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "User must be authenticated.");
-    }
-    const { callId } = request.data || {};
-    if (!callId) {
-        throw new HttpsError("invalid-argument", "callId is required.");
-    }
+  if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
 
-    const callRef = admin.firestore().collection("calls").doc(callId);
-    const snap = await callRef.get();
-    if (!snap.exists) {
-        throw new HttpsError("not-found", "Call not found.");
-    }
+  const { callId, reason } = request.data || {};
+  if (!callId || typeof callId !== "string") {
+    throw new HttpsError("invalid-argument", "callId is required.");
+  }
+
+  const ref = admin.firestore().collection("calls").doc(callId);
+
+  await admin.firestore().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "Call not found.");
+
     const call = snap.data();
+    const isParticipant =
+      call.callerUid === request.auth.uid || call.receiverUid === request.auth.uid;
 
-    if (call.callerUid !== request.auth.uid && call.receiverUid !== request.auth.uid) {
-        throw new HttpsError("permission-denied", "You are not a participant in this call.");
+    if (!isParticipant) {
+      throw new HttpsError("permission-denied", "Only participants can end.");
     }
 
-    if (call.status === "ended" || call.status === "declined" || call.status === "expired") {
-        return { callId, message: "Call was already ended." };
+    if (call.status === "ended" || call.status === "expired" || call.status === "missed" || call.status === "declined") {
+      return; // ідемпотентно
     }
+    
+    const finalStatus = (call.status === 'ringing' && reason === 'declined') ? 'declined' : 'ended';
 
-    await callRef.update({
-        status: "ended",
-        endedAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    tx.update(ref, {
+      status: finalStatus,
+      endedAt: admin.firestore.FieldValue.serverTimestamp(),
+      endReason: typeof reason === "string" ? reason : null,
+      endedBy: request.auth.uid,
     });
-    return { callId };
+  });
+
+  return { ok: true };
 });
