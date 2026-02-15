@@ -1,42 +1,38 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const logger = require("firebase-functions/logger");
-const { defineSecret } = require("firebase-functions/params");
-
-const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 
 exports.createDailyRoom = onCall(
-  { region: "us-central1", secrets: [DAILY_API_KEY] },
+  { region: "us-central1", secrets: ["DAILY_API_KEY"] },
   async (request) => {
-    
-    logger.info("ENV KEY:", process.env.DAILY_API_KEY);
-    logger.info("KEY LENGTH:", process.env.DAILY_API_KEY?.length);
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "User must be authenticated.");
+    }
 
-    if (!process.env.DAILY_API_KEY) {
-      throw new HttpsError("failed-precondition", "DAILY_API_KEY is missing in function environment");
+    const apiKey = process.env.DAILY_API_KEY;
+    if (!apiKey) {
+      throw new HttpsError("internal", "Missing DAILY_API_KEY secret.");
     }
 
     const resp = await fetch("https://api.daily.co/v1/rooms", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.DAILY_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
         name: `call-${Date.now()}`,
+        privacy: "private", // ✅ MVP security
       }),
     });
 
     const raw = await resp.text();
 
-    logger.info("STATUS:", resp.status);
-    logger.info("RAW RESPONSE:", raw);
-    
     if (!resp.ok) {
-      throw new HttpsError("internal", raw);
+      logger.error("Daily API error", { status: resp.status, raw });
+      throw new HttpsError("internal", "Failed to create Daily room.");
     }
-    
-    const data = JSON.parse(raw);
 
-    return { roomUrl: data.url };
+    const data = JSON.parse(raw);
+    return { roomUrl: data.url, roomName: data.name };
   }
 );
