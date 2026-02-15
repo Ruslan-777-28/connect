@@ -48,7 +48,6 @@ export default function UserProfilePage() {
       await createDailyRoom({
         receiverUid: userProfile.id,
         callerActingAs: 'client',
-        receiverActingAs: 'pro',
       });
 
       toast({

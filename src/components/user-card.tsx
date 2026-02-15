@@ -44,7 +44,6 @@ export function UserCard({ user }: UserCardProps) {
       await createDailyRoom({
         receiverUid: user.id,
         callerActingAs: 'client',
-        receiverActingAs: 'pro',
       });
 
       toast({

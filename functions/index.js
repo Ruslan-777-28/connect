@@ -11,7 +11,7 @@ exports.createDailyRoom = onCall(
       throw new HttpsError("unauthenticated", "User must be authenticated.");
     }
 
-    const { receiverUid, callerActingAs, receiverActingAs } = request.data || {};
+    const { receiverUid, callerActingAs } = request.data || {};
 
     if (!receiverUid || typeof receiverUid !== "string") {
       throw new HttpsError("invalid-argument", "receiverUid is required.");
@@ -21,8 +21,8 @@ exports.createDailyRoom = onCall(
     }
 
     const validRoles = new Set(["client", "pro"]);
-    if (!validRoles.has(callerActingAs) || !validRoles.has(receiverActingAs)) {
-      throw new HttpsError("invalid-argument", "actingAs must be 'client' or 'pro'.");
+    if (!validRoles.has(callerActingAs)) {
+      throw new HttpsError("invalid-argument", "callerActingAs must be 'client' or 'pro'.");
     }
 
     const apiKey = process.env.DAILY_API_KEY;
@@ -73,7 +73,7 @@ exports.createDailyRoom = onCall(
       receiverUid,
 
       callerActingAs,
-      receiverActingAs,
+      receiverActingAs: "pro",
 
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
