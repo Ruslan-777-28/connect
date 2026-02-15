@@ -35,24 +35,26 @@ export function CallManager() {
 
   const { data: incomingCalls } = useCollection<Call>(incomingCallsQuery);
 
-  const activeCallsQuery = useMemoFirebase(() => {
+  const activeCallsAsCallerQuery = useMemoFirebase(() => {
     if (!user) return null;
-    const asCaller = query(
+    return query(
       collection(firestore, 'calls'),
       where('callerUid', '==', user.uid),
       where('status', 'in', ['ringing', 'accepted'])
     );
-    const asReceiver = query(
+  }, [user, firestore]);
+
+  const activeCallsAsReceiverQuery = useMemoFirebase(() => {
+    if (!user) return null;
+    return query(
       collection(firestore, 'calls'),
       where('receiverUid', '==', user.uid),
       where('status', '==', 'accepted') // Receiver only sees accepted calls as "active"
     );
-    // This is not a real query, just a way to manage multiple queries in the hook
-    return [asCaller, asReceiver];
   }, [user, firestore]);
 
-  const { data: activeCallsAsCaller } = useCollection<Call>(activeCallsQuery ? activeCallsQuery[0] : null);
-  const { data: activeCallsAsReceiver } = useCollection<Call>(activeCallsQuery ? activeCallsQuery[1] : null);
+  const { data: activeCallsAsCaller } = useCollection<Call>(activeCallsAsCallerQuery);
+  const { data: activeCallsAsReceiver } = useCollection<Call>(activeCallsAsReceiverQuery);
 
   useEffect(() => {
     const fetchCallerProfile = async (call: Call) => {
