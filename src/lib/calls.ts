@@ -16,6 +16,8 @@ export function startVideoCall(app: FirebaseApp, receiverUid: string): Promise<{
         callerActingAs: 'client',
       });
 
+      console.log("createDailyRoom response:", res.data);
+
       const { callId, callerJoinUrl } = res.data as { callId: string; callerJoinUrl: string };
 
       if (!callerJoinUrl) {
