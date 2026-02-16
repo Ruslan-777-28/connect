@@ -12,6 +12,12 @@ import {
 } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
+type AcceptCallResult = {
+  roomName: string;
+  roomUrl: string;
+  token: string;
+}
+
 export function IncomingCallManager() {
   const { user, isUserLoading } = useUser();
   const app = useFirebaseApp();
@@ -26,7 +32,7 @@ export function IncomingCallManager() {
 
     const q = query(
       collection(db, 'calls'),
-      where('receiverUid', '==', user.uid),
+      where('receiverId', '==', user.uid),
       where('status', '==', 'ringing'),
       limit(1)
     );
@@ -45,19 +51,22 @@ export function IncomingCallManager() {
       try {
         const ok = window.confirm(
           `Incoming video call\n\nFrom: ${
-            call.callerUid
+            call.callerId
           }\nRole: ${call.callerActingAs ?? 'unknown'}\n\nAccept?`
         );
 
         if (ok) {
-          const acceptCall = httpsCallable(functions, 'acceptCall');
-          const res: any = await acceptCall({ callId });
-          const receiverJoinUrl = res.data?.receiverJoinUrl;
+          const acceptCall = httpsCallable< { callId: string }, AcceptCallResult>(functions, 'acceptCall');
+          const res = await acceptCall({ callId });
+          const { roomUrl, token } = res.data;
 
-          if (receiverJoinUrl) {
-            window.open(receiverJoinUrl, '_blank', 'noopener,noreferrer');
+          if (roomUrl && token) {
+            sessionStorage.setItem(`dailyToken:${callId}`, token);
+            sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
+            // Open the redirect page, which will then open the Daily URL
+            window.open(`/call/${callId}`, '_blank', 'noopener,noreferrer');
           } else {
-            alert('Accepted, but join URL is missing.');
+            alert('Accepted, but join URL info is missing.');
           }
         } else {
           const endCall = httpsCallable(functions, 'endCall');

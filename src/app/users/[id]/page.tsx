@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { doc } from 'firebase/firestore';
 import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp } from '@/firebase';
 import type { UserProfile } from '@/lib/types';
@@ -15,6 +15,7 @@ import { startVideoCall } from '@/lib/calls';
 
 export default function UserProfilePage() {
   const params = useParams();
+  const router = useRouter();
   const id = Array.isArray(params.id) ? params.id[0] : params.id;
   const firestore = useFirestore();
   const { toast } = useToast();
@@ -43,20 +44,17 @@ export default function UserProfilePage() {
     setIsCalling(true);
     toast({
       title: 'Calling...',
-      description: `Calling ${userProfile.name}. Please wait for them to accept.`,
+      description: `Calling ${userProfile.name}. Opening call...`,
     });
     try {
-      // This function now internally waits for the call to be resolved (accepted/ended)
-      await startVideoCall(app, userProfile.id);
+      const { callId } = await startVideoCall(app, userProfile.id);
+      router.push(`/call/${callId}`);
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
-    } finally {
-      // This will run after the call is accepted, ended, or fails,
-      // re-enabling the call button.
       setIsCalling(false);
     }
   };
@@ -121,6 +119,8 @@ export default function UserProfilePage() {
               className="mt-4"
               onClick={handleCallClick}
               disabled={isCalling}
+              aria-label="Start video call"
+              title="Start video call"
             >
               <Phone className="h-4 w-4" />
             </Button>

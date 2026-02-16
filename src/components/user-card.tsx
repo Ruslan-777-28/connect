@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { UserAvatar } from '@/components/user-avatar';
 import type { UserProfile } from '@/lib/types';
@@ -17,6 +18,8 @@ interface UserCardProps {
 
 export function UserCard({ user }: UserCardProps) {
   const { toast } = useToast();
+  const router = useRouter();
+
   const app = useFirebaseApp();
   const { user: currentUser } = useUser();
   const [isCalling, setIsCalling] = useState(false);
@@ -38,21 +41,20 @@ export function UserCard({ user }: UserCardProps) {
     setIsCalling(true);
     toast({
       title: 'Calling...',
-      description: `Calling ${user.name}. Please wait for them to accept.`,
+      description: `Calling ${user.name}. Opening call...`,
     });
-    
+
     try {
-      // This function now internally waits for the call to be resolved (accepted/ended)
-      await startVideoCall(app, user.id);
+      const { callId } = await startVideoCall(app, user.id);
+
+      // важливо: переходимо на сторінку дзвінка
+      router.push(`/call/${callId}`);
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Could not initiate call.',
+        description: error?.message || 'Could not initiate call.',
       });
-    } finally {
-      // This will run after the call is accepted, ended, or fails,
-      // re-enabling the call button.
       setIsCalling(false);
     }
   };
@@ -67,6 +69,7 @@ export function UserCard({ user }: UserCardProps) {
           />
           <h3 className="text-lg font-semibold text-foreground">{user.name}</h3>
           <p className="text-sm text-muted-foreground">{user.email}</p>
+
           {currentUser && currentUser.uid !== user.id && (
             <Button
               variant="outline"
@@ -74,6 +77,8 @@ export function UserCard({ user }: UserCardProps) {
               className="mt-4"
               onClick={handleCallClick}
               disabled={isCalling}
+              aria-label="Start video call"
+              title="Start video call"
             >
               <Phone className="h-4 w-4" />
             </Button>

@@ -2,52 +2,31 @@
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { FirebaseApp } from 'firebase/app';
-import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
-export function startVideoCall(app: FirebaseApp, receiverUid: string): Promise<{ callId: string }> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const functions = getFunctions(app, 'us-central1');
-      const db = getFirestore(app);
+type StartCallResult = {
+  callId: string;
+  roomName: string;
+  roomUrl: string;
+  token: string;
+  receiverId: string;
+};
 
-      const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
-      const res: any = await createDailyRoom({
-        receiverUid,
-        callerActingAs: 'client',
-      });
+export async function startVideoCall(app: FirebaseApp, receiverId: string): Promise<{ callId: string }> {
+  const functions = getFunctions(app, 'us-central1');
 
-      console.log("createDailyRoom response:", res.data);
+  const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(functions, 'startCall');
 
-      const { callId, callerJoinUrl } = res.data as { callId: string; callerJoinUrl: string };
+  const res = await startCall({ receiverId });
+  const data = res.data;
 
-      if (!callerJoinUrl) {
-        throw new Error('callerJoinUrl not returned from function.');
-      }
+  if (!data?.callId || !data?.token) {
+    throw new Error('startCall did not return callId/token');
+  }
 
-      const unsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
-        if (!snap.exists()) {
-          unsub();
-          alert('Call document was unexpectedly deleted.');
-          resolve({ callId });
-          return;
-        }
-        const call = snap.data();
+  // The token is NOT written to Firestore. It is held locally.
+  // The key is tied to the callId.
+  sessionStorage.setItem(`dailyToken:${data.callId}`, data.token);
+  sessionStorage.setItem(`dailyRoomUrl:${data.callId}`, data.roomUrl);
 
-        if (call.status === 'accepted') {
-          window.open(callerJoinUrl, '_blank', 'noopener,noreferrer');
-          unsub();
-          resolve({ callId });
-        }
-
-        if (['ended', 'expired', 'missed', 'declined'].includes(call.status)) {
-          unsub();
-          alert(`Call ${call.status}`);
-          resolve({ callId });
-        }
-      });
-
-    } catch (error) {
-      reject(error);
-    }
-  });
+  return { callId: data.callId };
 }
