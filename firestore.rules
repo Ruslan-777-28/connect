@@ -14,8 +14,8 @@ service cloud.firestore {
 
     function isCallParticipant() {
       return isSignedIn()
-        && (resource.data.callerUid == request.auth.uid
-            || resource.data.receiverUid == request.auth.uid);
+        && (resource.data.callerId == request.auth.uid
+            || resource.data.receiverId == request.auth.uid);
     }
 
     // ---------- Default: deny all access ----------

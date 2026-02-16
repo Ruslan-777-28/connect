@@ -1,204 +1,243 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 
-async function createDailyMeetingToken(apiKey, roomName, userId, displayName, isOwner = false) {
-  const resp = await fetch("https://api.daily.co/v1/meeting-tokens", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      properties: {
-        room_name: roomName,
-        user_id: userId,
-        user_name: displayName,
-        is_owner: !!isOwner,
-        enable_prejoin_ui: false,
-        exp: Math.floor(Date.now() / 1000) + 60 * 30,
-      },
-    }),
-  });
+const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 
-  const raw = await resp.text();
-  if (!resp.ok) {
-    throw new Error(`Daily meeting-token error (${resp.status}): ${raw}`);
+function requireAuth(request) {
+  if (!request.auth || !request.auth.uid) {
+    throw new HttpsError("unauthenticated", "Auth required");
   }
-
-  return JSON.parse(raw).token;
+  return request.auth.uid;
 }
 
-exports.createDailyRoom = onCall(
-  { region: "us-central1", secrets: ["DAILY_API_KEY"] },
-  async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Auth required.");
-    }
+function assertString(v, field) {
+  if (typeof v !== "string" || v.trim().length === 0) {
+    throw new HttpsError("invalid-argument", `${field} must be a non-empty string`);
+  }
+  return v.trim();
+}
 
-    const { receiverUid } = request.data || {};
-    if (!receiverUid) {
-      throw new HttpsError("invalid-argument", "receiverUid required.");
-    }
+async function dailyFetch(path, apiKey, { method = "GET", body } = {}) {
+  const res = await fetch(`https://api.daily.co/v1/${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
-    const callerUid = request.auth.uid;
-    if (receiverUid === callerUid) {
-      throw new HttpsError("invalid-argument", "Cannot call yourself.");
-    }
+  const raw = await res.text();
+  let json = null;
+  try { json = raw ? JSON.parse(raw) : null; } catch (_) {}
 
-    const apiKey = process.env.DAILY_API_KEY;
-    const db = admin.firestore();
+  if (!res.ok) {
+    logger.error("Daily API error", { path, status: res.status, raw });
+    throw new HttpsError(
+      "internal",
+      `Daily API error (${res.status})`,
+      { status: res.status, raw }
+    );
+  }
+  return json;
+}
 
-    const callerSnap = await db.collection("users").doc(callerUid).get();
-    const callerName = callerSnap.data()?.name || "User";
+async function getUserName(uid) {
+  const snap = await admin.firestore().doc(`users/${uid}`).get();
+  const data = snap.exists ? snap.data() : null;
+  const name = data?.name;
+  // Якщо з якоїсь причини name відсутній — даємо fallback, щоб токен не ламався.
+  return (typeof name === "string" && name.trim()) ? name.trim() : `user-${uid.slice(0, 6)}`;
+}
 
-    const callRef = db.collection("calls").doc();
-    const callId = callRef.id;
+async function createDailyRoomPrivate(apiKey) {
+  // room name — випадковий, щоб не колізилось
+  const roomName = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    const roomName = `call-${callId}`;
-
-    const roomResp = await fetch("https://api.daily.co/v1/rooms", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+  const room = await dailyFetch("rooms", apiKey, {
+    method: "POST",
+    body: {
+      name: roomName,
+      privacy: "private",
+      properties: {
+        // prejoin UI лишаємо true (корисно для вибору камери/міка),
+        // але пароль/ручні поля при meeting token більше не потрібні.
+        enable_prejoin_ui: true,
       },
-      body: JSON.stringify({
-        name: roomName,
-        privacy: "private",
-      }),
+    },
+  });
+
+  return { roomName: room.name, roomUrl: room.url };
+}
+
+async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isOwner }) {
+  // meeting token дає автоматичний доступ до private room без паролів
+  // exp: unix seconds (наприклад 2 години)
+  const exp = Math.floor(Date.now() / 1000) + 2 * 60 * 60;
+
+  const token = await dailyFetch("meeting-tokens", apiKey, {
+    method: "POST",
+    body: {
+      properties: {
+        room_name: roomName,
+        user_name: userName,
+        user_id: userId,
+        is_owner: !!isOwner,
+        exp,
+      },
+    },
+  });
+
+  return token?.token;
+}
+
+/**
+ * startCall
+ * data: { receiverId: string }
+ * returns: { callId, roomUrl, roomName, token, receiverId }
+ */
+exports.startCall = onCall(
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
+  async (request) => {
+    const callerId = requireAuth(request);
+    const receiverId = assertString(request.data?.receiverId, "receiverId");
+
+    if (receiverId === callerId) {
+      throw new HttpsError("invalid-argument", "Cannot call yourself");
+    }
+
+    // Перевіряємо що receiver існує в users/{uid}
+    const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+    if (!receiverSnap.exists) {
+      throw new HttpsError("not-found", "Receiver user profile not found");
+    }
+
+    const apiKey = DAILY_API_KEY.value();
+
+    // 1) створюємо room
+    const { roomName, roomUrl } = await createDailyRoomPrivate(apiKey);
+
+    // 2) генеруємо токен для caller
+    const callerName = await getUserName(callerId);
+    const callerToken = await createDailyMeetingToken(apiKey, {
+      roomName,
+      userName: callerName,
+      userId: callerId,
+      isOwner: true,
     });
 
-    const roomRaw = await roomResp.text();
-    if (!roomResp.ok) {
-      logger.error("Daily API error", { status: roomResp.status, raw: roomRaw });
-      throw new HttpsError("internal", `Room create failed: ${roomRaw}`);
+    if (!callerToken) {
+      throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
-    const room = JSON.parse(roomRaw);
-    const roomUrl = room.url;
-
-    const callerToken = await createDailyMeetingToken(
-      apiKey,
-      roomName,
-      callerUid,
-      callerName,
-      true
-    );
-
-    const callerJoinUrl = `${roomUrl}?t=${callerToken}`;
+    // 3) пишемо calls/{callId}
+    const callRef = admin.firestore().collection("calls").doc();
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
     await callRef.set({
-      type: "video",
-      status: "ringing",
+      status: "ringing",               // ringing -> accepted -> ended
+      callerId,
+      receiverId,
+      receiverActingAs: "pro",         // твій варіант A
       roomName,
       roomUrl,
-      callerUid,
-      receiverUid,
-      callerActingAs: "client",
-      receiverActingAs: "pro",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      acceptedAt: null,
-      endedAt: null,
+      createdAt: now,
+      updatedAt: now,
     });
 
-    return { callId, callerJoinUrl };
+    return {
+      callId: callRef.id,
+      roomName,
+      roomUrl,
+      token: callerToken,              // токен віддаємо тільки клієнту, НЕ в Firestore
+      receiverId,
+    };
   }
 );
 
+/**
+ * acceptCall
+ * data: { callId: string }
+ * returns: { roomUrl, roomName, token }
+ */
 exports.acceptCall = onCall(
-  { region: "us-central1", secrets: ["DAILY_API_KEY"] },
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Auth required.");
-    }
+    const uid = requireAuth(request);
+    const callId = assertString(request.data?.callId, "callId");
 
-    const { callId } = request.data || {};
-    if (!callId) {
-      throw new HttpsError("invalid-argument", "callId required.");
-    }
-
-    const receiverUid = request.auth.uid;
-    const db = admin.firestore();
-    const apiKey = process.env.DAILY_API_KEY;
-
-    const callRef = db.collection("calls").doc(callId);
+    const callRef = admin.firestore().doc(`calls/${callId}`);
     const snap = await callRef.get();
-
-    if (!snap.exists) {
-      throw new HttpsError("not-found", "Call not found.");
-    }
+    if (!snap.exists) throw new HttpsError("not-found", "Call not found");
 
     const call = snap.data();
-
-    if (call.receiverUid !== receiverUid) {
-      throw new HttpsError("permission-denied", "Not your call.");
+    if (call.receiverId !== uid) {
+      throw new HttpsError("permission-denied", "Only receiver can accept this call");
     }
-
     if (call.status !== "ringing") {
-      throw new HttpsError("failed-precondition", "Call not ringing.");
+      throw new HttpsError("failed-precondition", `Call is not in ringing state (status=${call.status})`);
     }
 
-    const receiverSnap = await db.collection("users").doc(receiverUid).get();
-    const receiverName = receiverSnap.data()?.name || "User";
+    const apiKey = DAILY_API_KEY.value();
+
+    const receiverName = await getUserName(uid);
+    const receiverToken = await createDailyMeetingToken(apiKey, {
+      roomName: call.roomName,
+      userName: receiverName,
+      userId: uid,
+      isOwner: false,
+    });
+
+    if (!receiverToken) {
+      throw new HttpsError("internal", "Failed to create Daily meeting token for receiver");
+    }
 
     await callRef.update({
       status: "accepted",
       acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    const receiverToken = await createDailyMeetingToken(
-      apiKey,
-      call.roomName,
-      receiverUid,
-      receiverName,
-      false
-    );
-
-    const receiverJoinUrl = `${call.roomUrl}?t=${receiverToken}`;
-
-    return { callId, receiverJoinUrl };
+    return {
+      roomName: call.roomName,
+      roomUrl: call.roomUrl,
+      token: receiverToken,
+    };
   }
 );
 
+/**
+ * endCall
+ * data: { callId: string, reason?: string }
+ * returns: { ok: true }
+ */
+exports.endCall = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const callId = assertString(request.data?.callId, "callId");
+    const reason = (typeof request.data?.reason === "string") ? request.data.reason.slice(0, 200) : null;
 
-exports.endCall = onCall({ region: "us-central1" }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
-
-  const { callId, reason } = request.data || {};
-  if (!callId || typeof callId !== "string") {
-    throw new HttpsError("invalid-argument", "callId is required.");
-  }
-
-  const ref = admin.firestore().collection("calls").doc(callId);
-
-  await admin.firestore().runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    if (!snap.exists) throw new HttpsError("not-found", "Call not found.");
+    const callRef = admin.firestore().doc(`calls/${callId}`);
+    const snap = await callRef.get();
+    if (!snap.exists) throw new HttpsError("not-found", "Call not found");
 
     const call = snap.data();
-    const isParticipant =
-      call.callerUid === request.auth.uid || call.receiverUid === request.auth.uid;
+    const isParticipant = call.callerId === uid || call.receiverId === uid;
+    if (!isParticipant) throw new HttpsError("permission-denied", "Not a call participant");
 
-    if (!isParticipant) {
-      throw new HttpsError("permission-denied", "Only participants can end.");
-    }
-
-    if (call.status === "ended" || call.status === "expired" || call.status === "missed" || call.status === "declined") {
-      return; // ідемпотентно
-    }
-    
-    const finalStatus = (call.status === 'ringing' && reason === 'declined') ? 'declined' : 'ended';
-
-    tx.update(ref, {
-      status: finalStatus,
+    await callRef.update({
+      status: "ended",
       endedAt: admin.firestore.FieldValue.serverTimestamp(),
-      endReason: typeof reason === "string" ? reason : null,
-      endedBy: request.auth.uid,
+      endedBy: uid,
+      endReason: reason || "ended",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-  });
 
-  return { ok: true };
-});
+    return { ok: true };
+  }
+);

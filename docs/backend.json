@@ -52,11 +52,11 @@
       "type": "object",
       "description": "Represents a call between two users.",
       "properties": {
-        "callerUid": {
+        "callerId": {
           "type": "string",
           "description": "The UID of the user who initiated the call."
         },
-        "receiverUid": {
+        "receiverId": {
           "type": "string",
           "description": "The UID of the user who is being called."
         },
@@ -72,19 +72,11 @@
           "type": "string",
           "description": "Name of the video/audio call room."
         },
-        "type": {
-          "type": "string",
-          "enum": ["video"]
-        },
         "createdAt": {
           "type": "string",
           "format": "date-time"
         },
         "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "expiresAt": {
           "type": "string",
           "format": "date-time"
         },
@@ -105,7 +97,7 @@
             "enum": ["client", "pro"]
         }
       },
-      "required": ["callerUid", "receiverUid", "status", "createdAt", "updatedAt", "type", "expiresAt"]
+      "required": ["callerId", "receiverId", "status", "createdAt", "updatedAt", "roomName", "roomUrl"]
     }
   },
   "auth": {
