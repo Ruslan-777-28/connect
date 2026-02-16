@@ -56,6 +56,10 @@
           "type": "string",
           "description": "The UID of the user who initiated the call."
         },
+        "callerName": {
+          "type": "string",
+          "description": "The display name of the user who initiated the call."
+        },
         "receiverId": {
           "type": "string",
           "description": "The UID of the user who is being called."

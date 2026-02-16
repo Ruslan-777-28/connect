@@ -14,6 +14,7 @@ export type Call = {
   id: string;
   callerId: string;
   receiverId: string;
+  callerName?: string;
   status: 'ringing' | 'accepted' | 'ended' | 'declined' | 'missed' | 'expired';
   roomUrl: string;
   roomName: string;

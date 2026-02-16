@@ -50,12 +50,12 @@ async function getUserName(uid) {
   const snap = await admin.firestore().doc(`users/${uid}`).get();
   const data = snap.exists ? snap.data() : null;
   const name = data?.name;
-  // Якщо з якоїсь причини name відсутній — даємо fallback, щоб токен не ламався.
+  // Fallback if name is missing for some reason, to prevent token from breaking.
   return (typeof name === "string" && name.trim()) ? name.trim() : `user-${uid.slice(0, 6)}`;
 }
 
 async function createDailyRoomPrivate(apiKey) {
-  // room name — випадковий, щоб не колізилось
+  // random room name to avoid collisions
   const roomName = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const room = await dailyFetch("rooms", apiKey, {
@@ -64,8 +64,8 @@ async function createDailyRoomPrivate(apiKey) {
       name: roomName,
       privacy: "private",
       properties: {
-        // prejoin UI лишаємо true (корисно для вибору камери/міка),
-        // але пароль/ручні поля при meeting token більше не потрібні.
+        // Leave prejoin UI true (useful for camera/mic selection),
+        // but password/manual fields are no longer needed with a meeting token.
         enable_prejoin_ui: true,
       },
     },
@@ -75,8 +75,8 @@ async function createDailyRoomPrivate(apiKey) {
 }
 
 async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isOwner }) {
-  // meeting token дає автоматичний доступ до private room без паролів
-  // exp: unix seconds (наприклад 2 години)
+  // meeting token gives automatic access to a private room without passwords
+  // exp: unix seconds (e.g., 2 hours)
   const exp = Math.floor(Date.now() / 1000) + 2 * 60 * 60;
 
   const token = await dailyFetch("meeting-tokens", apiKey, {
@@ -110,7 +110,7 @@ exports.startCall = onCall(
       throw new HttpsError("invalid-argument", "Cannot call yourself");
     }
 
-    // Перевіряємо що receiver існує в users/{uid}
+    // Check that receiver exists in users/{uid}
     const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
     if (!receiverSnap.exists) {
       throw new HttpsError("not-found", "Receiver user profile not found");
@@ -118,10 +118,10 @@ exports.startCall = onCall(
 
     const apiKey = DAILY_API_KEY.value();
 
-    // 1) створюємо room
+    // 1) create room
     const { roomName, roomUrl } = await createDailyRoomPrivate(apiKey);
 
-    // 2) генеруємо токен для caller
+    // 2) generate token for caller
     const callerName = await getUserName(callerId);
     const callerToken = await createDailyMeetingToken(apiKey, {
       roomName,
@@ -134,7 +134,7 @@ exports.startCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
-    // 3) пишемо calls/{callId}
+    // 3) write to calls/{callId}
     const callRef = admin.firestore().collection("calls").doc();
     const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -142,7 +142,8 @@ exports.startCall = onCall(
       status: "ringing",               // ringing -> accepted -> ended
       callerId,
       receiverId,
-      receiverActingAs: "pro",         // твій варіант A
+      callerName,
+      receiverActingAs: "pro",
       roomName,
       roomUrl,
       createdAt: now,
@@ -153,7 +154,7 @@ exports.startCall = onCall(
       callId: callRef.id,
       roomName,
       roomUrl,
-      token: callerToken,              // токен віддаємо тільки клієнту, НЕ в Firestore
+      token: callerToken,              // token is returned only to the client, NOT in Firestore
       receiverId,
     };
   }
