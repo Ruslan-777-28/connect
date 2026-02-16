@@ -18,27 +18,25 @@ service cloud.firestore {
             || resource.data.receiverUid == request.auth.uid);
     }
 
-    // ---------- Default: deny ----------
+    // ---------- Default: deny all access ----------
     match /{document=**} {
       allow read, write: if false;
     }
 
     // ---------- Users ----------
-    // Мінімально: юзер може читати (авториз.), змінювати тільки свій профіль
+    // Allow signed in users to read profiles.
+    // Allow users to create and update their own profile.
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isSelf(uid);
-      allow update: if isSelf(uid);
-      allow delete: if false;
+      allow create, update: if isSelf(uid);
+      allow delete: if false; // Disallow client-side deletion for safety
     }
 
     // ---------- Calls (1:1 video) ----------
-    // ВАЖЛИВО: створення/оновлення робиться Cloud Functions, клієнт тільки читає
+    // Allow only call participants to read the call document.
+    // All writes are handled by Cloud Functions.
     match /calls/{callId} {
-      // учасники можуть читати (слухати статус)
       allow read: if isCallParticipant();
-
-      // ніхто з клієнта не створює/не змінює/не видаляє
       allow create, update, delete: if false;
     }
   }
