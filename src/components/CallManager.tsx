@@ -9,7 +9,15 @@ import {
   useFirebaseApp,
   useDoc,
 } from '@/firebase';
-import { collection, query, where, doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
+import {
+  collection,
+  query,
+  where,
+  doc,
+  onSnapshot,
+  Unsubscribe,
+  getDoc,
+} from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -69,7 +77,9 @@ export function CallManager() {
     );
   }, [user, firestore]);
 
-  const { data: acceptedAsCaller } = useCollection<Call>(acceptedAsCallerQuery);
+  const { data: acceptedAsCaller } = useCollection<Call>(
+    acceptedAsCallerQuery
+  );
   const { data: acceptedAsReceiver } = useCollection<Call>(
     acceptedAsReceiverQuery
   );
@@ -118,52 +128,73 @@ export function CallManager() {
 
     const accept = async () => {
       setBusyCallId(callId);
+      const callWindow = window.open('', '_blank', 'noopener,noreferrer');
+
       try {
         const callDocRef = doc(firestore, 'calls', callId);
         const snap = await getDoc(callDocRef);
         const current = snap.data() as Call | undefined;
-    
+
         if (!current || current.status !== 'ringing') {
           toast({
             variant: 'destructive',
             title: 'Call no longer available',
             description: 'This call has already ended.',
           });
+          if (callWindow) callWindow.close();
           return;
         }
 
         const functions = getFunctions(app, 'us-central1');
-        const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
-    
+        const acceptCall = httpsCallable<
+          { callId: string },
+          AcceptCallResult
+        >(functions, 'acceptCall');
+
         const res = await acceptCall({ callId });
         const data = res.data;
-    
+
         if (!data?.token || !data?.roomUrl) {
           throw new Error('acceptCall did not return token/roomUrl');
         }
-    
-        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
-        const callWindow = window.open(urlWithToken, '_blank', 'noopener,noreferrer');
-    
-        if (!callWindow) {
+
+        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(
+          data.token
+        )}`;
+
+        if (callWindow) {
+          callWindow.location.href = urlWithToken;
+        } else {
           const endCall = httpsCallable(functions, 'endCall');
           await endCall({ callId, reason: 'popup_blocked' });
-          throw new Error('Popup was blocked. Please allow popups for this site.');
+          throw new Error(
+            'Popup was blocked. Please allow popups for this site.'
+          );
         }
-    
+
         let unsubscribe: Unsubscribe | null = null;
         let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
         let latestStatus: Call['status'] | null = null;
-    
+
         const cleanup = () => {
-          if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-          if (closedCheckInterval) { clearInterval(closedCheckInterval); closedCheckInterval = null; }
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+          }
+          if (closedCheckInterval) {
+            clearInterval(closedCheckInterval);
+            closedCheckInterval = null;
+          }
         };
-        
+
         unsubscribe = onSnapshot(
           callDocRef,
           (snapshot) => {
-            if (!snapshot.exists()) { latestStatus = null; cleanup(); return; }
+            if (!snapshot.exists()) {
+              latestStatus = null;
+              cleanup();
+              return;
+            }
             const callData = snapshot.data() as Call | undefined;
             latestStatus = (callData?.status as any) ?? null;
             if (latestStatus === 'ended') cleanup();
@@ -173,7 +204,7 @@ export function CallManager() {
             cleanup();
           }
         );
-    
+
         closedCheckInterval = setInterval(() => {
           if (latestStatus === 'ended') {
             cleanup();
@@ -185,8 +216,8 @@ export function CallManager() {
             cleanup();
           }
         }, 1000);
-    
       } catch (e: any) {
+        if (callWindow) callWindow.close();
         toast({
           variant: 'destructive',
           title: 'Accept failed',
