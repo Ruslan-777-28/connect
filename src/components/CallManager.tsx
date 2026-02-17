@@ -1,13 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useUser, useFirestore, useCollection, useMemoFirebase, useFirebaseApp } from '@/firebase';
-import { collection, query, where } from 'firebase/firestore';
-import type { Call } from '@/lib/types';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import {
+  useUser,
+  useFirestore,
+  useCollection,
+  useMemoFirebase,
+  useFirebaseApp,
+  useDoc,
+} from '@/firebase';
+import { collection, query, where, doc } from 'firebase/firestore';
+import type { Call, UserProfile } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { ActiveCallBar } from './ActiveCallBar';
 
 type AcceptCallResult = {
   roomUrl: string;
@@ -29,7 +37,7 @@ export function CallManager() {
   const shownCallIdsRef = useRef<Set<string>>(new Set());
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
 
-  // Incoming calls for receiver (status = ringing)
+  // --- Listen for INCOMING calls (for receiver) ---
   const incomingCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(
@@ -38,29 +46,84 @@ export function CallManager() {
       where('status', '==', 'ringing')
     );
   }, [user, firestore]);
-
   const { data: incomingCalls } = useCollection<Call>(incomingCallsQuery);
 
+  // --- Listen for ACTIVE calls (for both participants) ---
+  const [activeCall, setActiveCall] = useState<Call | null>(null);
+
+  const acceptedAsCallerQuery = useMemoFirebase(() => {
+    if (!user) return null;
+    return query(
+      collection(firestore, 'calls'),
+      where('callerId', '==', user.uid),
+      where('status', '==', 'accepted')
+    );
+  }, [user, firestore]);
+
+  const acceptedAsReceiverQuery = useMemoFirebase(() => {
+    if (!user) return null;
+    return query(
+      collection(firestore, 'calls'),
+      where('receiverId', '==', user.uid),
+      where('status', '==', 'accepted')
+    );
+  }, [user, firestore]);
+
+  const { data: acceptedAsCaller } = useCollection<Call>(acceptedAsCallerQuery);
+  const { data: acceptedAsReceiver } = useCollection<Call>(
+    acceptedAsReceiverQuery
+  );
+
+  // Combine accepted calls and find the active one
   useEffect(() => {
-    if (!user) return;
-    if (!incomingCalls || incomingCalls.length === 0) return;
+    const allAccepted = [
+      ...(acceptedAsCaller || []),
+      ...(acceptedAsReceiver || []),
+    ];
+    setActiveCall(allAccepted.length > 0 ? allAccepted[0] : null);
+  }, [acceptedAsCaller, acceptedAsReceiver]);
+
+  // Fetch caller's profile for the active call bar
+  const callerDocRef = useMemoFirebase(
+    () =>
+      activeCall?.callerId
+        ? doc(firestore, 'users', activeCall.callerId)
+        : null,
+    [activeCall?.callerId, firestore]
+  );
+  const { data: callerProfile } = useDoc<UserProfile>(callerDocRef);
+
+  const activeCallWithCaller = useMemo(
+    () =>
+      activeCall && callerProfile
+        ? { ...activeCall, caller: callerProfile }
+        : activeCall,
+    [activeCall, callerProfile]
+  );
+
+  // --- Effect for showing INCOMING call toasts ---
+  useEffect(() => {
+    if (!user || !incomingCalls || incomingCalls.length === 0) return;
 
     const call = incomingCalls[0] as any;
     const callId: string | undefined = call?.id;
     if (!callId) return;
 
-    if (pathname === `/call/${callId}`) return;
-    if (shownCallIdsRef.current.has(callId)) return;
+    if (pathname === `/call/${callId}` || shownCallIdsRef.current.has(callId)) {
+      return;
+    }
     shownCallIdsRef.current.add(callId);
 
     const callerName = (call?.callerName as string) || 'Someone';
 
     const accept = async () => {
+      setBusyCallId(callId);
       try {
-        setBusyCallId(callId);
-
         const functions = getFunctions(app, 'us-central1');
-        const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
+        const acceptCall = httpsCallable<
+          { callId: string },
+          AcceptCallResult
+        >(functions, 'acceptCall');
 
         const res = await acceptCall({ callId });
         const data = res.data;
@@ -69,9 +132,10 @@ export function CallManager() {
           throw new Error('acceptCall did not return token/roomUrl');
         }
 
-        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
+        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(
+          data.token
+        )}`;
         window.open(urlWithToken, '_blank', 'noopener,noreferrer');
-
       } catch (e: any) {
         toast({
           variant: 'destructive',
@@ -85,11 +149,13 @@ export function CallManager() {
     };
 
     const decline = async () => {
+      setBusyCallId(callId);
       try {
-        setBusyCallId(callId);
-
         const functions = getFunctions(app, 'us-central1');
-        const endCall = httpsCallable<{ callId: string; reason: string }, EndCallResult>(functions, 'endCall');
+        const endCall = httpsCallable<
+          { callId: string; reason: string },
+          EndCallResult
+        >(functions, 'endCall');
 
         await endCall({ callId, reason: 'declined' });
 
@@ -118,7 +184,12 @@ export function CallManager() {
           <Button size="sm" onClick={accept} disabled={busyCallId === callId}>
             Accept
           </Button>
-          <Button size="sm" variant="outline" onClick={decline} disabled={busyCallId === callId}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={decline}
+            disabled={busyCallId === callId}
+          >
             Decline
           </Button>
         </div>
@@ -126,5 +197,7 @@ export function CallManager() {
     });
   }, [incomingCalls, user, pathname, router, toast, app, busyCallId]);
 
-  return null;
+  return activeCallWithCaller ? (
+    <ActiveCallBar call={activeCallWithCaller} />
+  ) : null;
 }
