@@ -127,21 +127,33 @@ export function CallManager() {
     const callerName = (call?.callerName as string) || 'Someone';
 
     const accept = async () => {
+      const callWindow = window.open('about:blank', '_blank');
+      if (!callWindow) {
+        toast({
+          variant: 'destructive',
+          title: 'Popup blocked',
+          description: 'Allow popups for this site, then press Accept again.',
+        });
+        return;
+      }
+      try {
+        callWindow.opener = null;
+      } catch {}
+    
       setBusyCallId(callId);
-      const callWindow = window.open('', '_blank', 'noopener,noreferrer');
-
+    
       try {
         const callDocRef = doc(firestore, 'calls', callId);
         const snap = await getDoc(callDocRef);
         const current = snap.data() as Call | undefined;
-
+    
         if (!current || current.status !== 'ringing') {
           toast({
             variant: 'destructive',
             title: 'Call no longer available',
             description: 'This call has already ended.',
           });
-          if (callWindow) callWindow.close();
+          callWindow.close();
           return;
         }
 
@@ -150,32 +162,24 @@ export function CallManager() {
           { callId: string },
           AcceptCallResult
         >(functions, 'acceptCall');
-
+    
         const res = await acceptCall({ callId });
         const data = res.data;
-
+    
         if (!data?.token || !data?.roomUrl) {
+          callWindow.close();
           throw new Error('acceptCall did not return token/roomUrl');
         }
-
+    
         const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(
           data.token
         )}`;
-
-        if (callWindow) {
-          callWindow.location.href = urlWithToken;
-        } else {
-          const endCall = httpsCallable(functions, 'endCall');
-          await endCall({ callId, reason: 'popup_blocked' });
-          throw new Error(
-            'Popup was blocked. Please allow popups for this site.'
-          );
-        }
-
+        callWindow.location.href = urlWithToken;
+    
         let unsubscribe: Unsubscribe | null = null;
         let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
         let latestStatus: Call['status'] | null = null;
-
+    
         const cleanup = () => {
           if (unsubscribe) {
             unsubscribe();
@@ -186,7 +190,7 @@ export function CallManager() {
             closedCheckInterval = null;
           }
         };
-
+    
         unsubscribe = onSnapshot(
           callDocRef,
           (snapshot) => {
@@ -204,7 +208,7 @@ export function CallManager() {
             cleanup();
           }
         );
-
+    
         closedCheckInterval = setInterval(() => {
           if (latestStatus === 'ended') {
             cleanup();
@@ -217,11 +221,13 @@ export function CallManager() {
           }
         }, 1000);
       } catch (e: any) {
-        if (callWindow) callWindow.close();
+        try {
+          callWindow.close();
+        } catch {}
         toast({
           variant: 'destructive',
           title: 'Accept failed',
-          description: e?.message || 'Could not accept the call.',
+          description: e.message || 'Could not accept the call.',
         });
         shownCallIdsRef.current.delete(callId);
       } finally {

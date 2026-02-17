@@ -38,12 +38,18 @@ export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string
 ): Promise<{ callId: string }> {
-  const functions = getFunctions(app, 'us-central1');
-  const firestore = getFirestore(app);
-
-  const callWindow = window.open('', '_blank', 'noopener,noreferrer');
+  const callWindow = window.open('about:blank', '_blank');
+  if (!callWindow) {
+    throw new Error('Popup blocked. Allow popups for this site and try again.');
+  }
+  try {
+    callWindow.opener = null;
+  } catch {}
 
   try {
+    const functions = getFunctions(app, 'us-central1');
+    const firestore = getFirestore(app);
+
     const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(
       functions,
       'startCall'
@@ -52,18 +58,14 @@ export async function startVideoCall(
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
+      callWindow.close();
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
     const { callId, roomUrl, token } = data;
-    const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
 
-    if (callWindow) {
-      callWindow.location.href = urlWithToken;
-    } else {
-      await endCallClient(app, callId, 'popup_blocked');
-      throw new Error('Popup was blocked. Please allow popups for this site.');
-    }
+    const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
+    callWindow.location.href = urlWithToken;
 
     let unsubscribe: Unsubscribe | null = null;
     let missedTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -127,13 +129,13 @@ export async function startVideoCall(
       }
     }, 45_000);
 
-    closedCheckInterval = setInterval(() => {
+    closedCheckInterval = setInterval(async () => {
       if (latestStatus === 'ended') {
         cleanup();
         return;
       }
       if (callWindow.closed) {
-        endCallClient(app, callId, 'caller_closed_tab');
+        await endCallClient(app, callId, 'caller_closed_tab');
         cleanup();
       }
     }, 1000);
