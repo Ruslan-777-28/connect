@@ -41,9 +41,23 @@ export function UserCard({ user }: UserCardProps) {
       description: `Calling ${user.name}. Please allow pop-ups.`,
     });
 
+    const callWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!callWindow) {
+      toast({
+        variant: 'destructive',
+        title: 'Popup Blocked',
+        description: 'Please allow pop-ups for this site to place a call.',
+      });
+      setIsCalling(false);
+      return;
+    }
+
     try {
-      await startVideoCall(app, user.id);
+      await startVideoCall(app, user.id, callWindow);
     } catch (error: any) {
+      if (!callWindow.closed) {
+        callWindow.close();
+      }
       toast({
         variant: 'destructive',
         title: 'Error',

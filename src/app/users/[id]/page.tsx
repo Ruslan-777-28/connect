@@ -46,9 +46,24 @@ export default function UserProfilePage() {
       title: 'Starting call...',
       description: `Calling ${userProfile.name}. Please allow pop-ups.`,
     });
+
+    const callWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!callWindow) {
+      toast({
+        variant: 'destructive',
+        title: 'Popup Blocked',
+        description: 'Please allow pop-ups for this site to place a call.',
+      });
+      setIsCalling(false);
+      return;
+    }
+
     try {
-      await startVideoCall(app, userProfile.id);
+      await startVideoCall(app, userProfile.id, callWindow);
     } catch (error: any) {
+      if (!callWindow.closed) {
+        callWindow.close();
+      }
       toast({
         variant: 'destructive',
         title: 'Error',

@@ -36,17 +36,9 @@ async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
 
 export async function startVideoCall(
   app: FirebaseApp,
-  receiverId: string
+  receiverId: string,
+  callWindow: Window,
 ): Promise<{ callId: string }> {
-  const callWindow = window.open('about:blank', '_blank');
-  console.log('[CALL] popup window =', callWindow);
-
-  if (!callWindow) {
-    throw new Error('Popup blocked. Allow popups for this site and try again.');
-  }
-  try {
-    callWindow.opener = null;
-  } catch {}
 
   try {
     const functions = getFunctions(app, 'us-central1');
@@ -60,7 +52,7 @@ export async function startVideoCall(
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      callWindow.close();
+      if (!callWindow.closed) callWindow.close();
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
@@ -125,10 +117,10 @@ export async function startVideoCall(
     missedTimeout = setTimeout(async () => {
       const snap = await getDoc(callDocRef);
       const current = snap.data() as Call | undefined;
-
       if (current?.status === 'ringing') {
         await endCallClient(app, callId, 'missed');
       }
+      cleanup();
     }, 45_000);
 
     closedCheckInterval = setInterval(async () => {
@@ -144,7 +136,7 @@ export async function startVideoCall(
 
     return { callId };
   } catch (error) {
-    if (callWindow) {
+    if (!callWindow.closed) {
       callWindow.close();
     }
     throw error;

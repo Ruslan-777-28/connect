@@ -119,7 +119,7 @@ export function CallManager() {
     const callId: string | undefined = call?.id;
     if (!callId) return;
 
-    if (pathname === `/call/${callId}` || shownCallIdsRef.current.has(callId)) {
+    if (shownCallIdsRef.current.has(callId)) {
       return;
     }
     shownCallIdsRef.current.add(callId);
@@ -127,8 +127,16 @@ export function CallManager() {
     const callerName = (call?.callerName as string) || 'Someone';
 
     const accept = async () => {
-      const callWindow = window.open('about:blank', '_blank');
-      console.log('[ACCEPT] popup window =', callWindow);
+      const callWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+      if (!callWindow) {
+        toast({
+          variant: 'destructive',
+          title: 'Popup Blocked',
+          description: 'Please allow popups and try again.',
+        });
+        return;
+      }
+      try { callWindow.opener = null; } catch {}
     
       setBusyCallId(callId);
     
@@ -136,16 +144,6 @@ export function CallManager() {
         const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
 
-        if (!callWindow) {
-          const endCall = httpsCallable(functions, 'endCall');
-          await endCall({ callId, reason: 'popup_blocked' });
-          throw new Error('Popup blocked by browser. Allow pop-ups for this site.');
-        }
-
-        try {
-          callWindow.opener = null;
-        } catch {}
-    
         const snap = await getDoc(callDocRef);
         const current = snap.data() as Call | undefined;
     
@@ -155,7 +153,7 @@ export function CallManager() {
             title: 'Call no longer available',
             description: 'This call has already ended.',
           });
-          callWindow.close();
+          if (!callWindow.closed) callWindow.close();
           return;
         }
     
@@ -168,7 +166,7 @@ export function CallManager() {
         const data = res.data;
     
         if (!data?.token || !data?.roomUrl) {
-          callWindow.close();
+          if (!callWindow.closed) callWindow.close();
           throw new Error('acceptCall did not return token/roomUrl');
         }
     
@@ -222,10 +220,8 @@ export function CallManager() {
           }
         }, 1000);
       } catch (e: any) {
-        if (callWindow) {
-          try {
-            callWindow.close();
-          } catch {}
+        if (!callWindow.closed) {
+          callWindow.close();
         }
         toast({
           variant: 'destructive',
