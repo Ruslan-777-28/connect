@@ -136,26 +136,15 @@ export function CallManager() {
         });
         return;
       }
+      try {
+        callWindow.opener = null;
+      } catch {}
     
       setBusyCallId(callId);
     
       try {
-        try { callWindow.opener = null; } catch {}
         const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
-
-        const snap = await getDoc(callDocRef);
-        const current = snap.data() as Call | undefined;
-    
-        if (!current || current.status !== 'ringing') {
-          toast({
-            variant: 'destructive',
-            title: 'Call no longer available',
-            description: 'This call has already ended.',
-          });
-          if (!callWindow.closed) callWindow.close();
-          return;
-        }
     
         const acceptCall = httpsCallable<
           { callId: string },
@@ -208,11 +197,16 @@ export function CallManager() {
           }
         );
     
+        const openedAt = Date.now();
+        const CLOSE_GRACE_MS = 6000;
+
         closedCheckInterval = setInterval(() => {
           if (latestStatus === 'ended') {
             cleanup();
             return;
           }
+          if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
+
           if (callWindow.closed) {
             const endCall = httpsCallable(functions, 'endCall');
             endCall({ callId, reason: 'receiver_closed_tab' });

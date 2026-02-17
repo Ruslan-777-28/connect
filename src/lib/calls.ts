@@ -39,7 +39,6 @@ export async function startVideoCall(
   receiverId: string,
   callWindow: Window,
 ): Promise<{ callId: string }> {
-
   try {
     const functions = getFunctions(app, 'us-central1');
     const firestore = getFirestore(app);
@@ -52,7 +51,9 @@ export async function startVideoCall(
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      if (!callWindow.closed) callWindow.close();
+      if (!callWindow.closed) {
+        callWindow.close();
+      }
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
@@ -117,18 +118,27 @@ export async function startVideoCall(
     missedTimeout = setTimeout(async () => {
       const snap = await getDoc(callDocRef);
       const current = snap.data() as Call | undefined;
+
       if (current?.status === 'ringing') {
         await endCallClient(app, callId, 'missed');
       }
       cleanup();
     }, 45_000);
 
+    const openedAt = Date.now();
+    const CLOSE_GRACE_MS = 6000; // 6 секунд не реагуємо на closed
+
     closedCheckInterval = setInterval(async () => {
       if (latestStatus === 'ended') {
         cleanup();
         return;
       }
+
+      // не чіпаємо перші 6 секунд, щоб не “вбивати” дзвінок через popup policy
+      if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
+
       if (callWindow.closed) {
+        // тут уже логічно вважати, що користувач реально закрив вкладку дзвінка
         await endCallClient(app, callId, 'caller_closed_tab');
         cleanup();
       }
