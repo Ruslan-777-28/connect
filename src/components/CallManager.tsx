@@ -69,10 +69,9 @@ export function CallManager() {
           throw new Error('acceptCall did not return token/roomUrl');
         }
 
-        sessionStorage.setItem(`dailyToken:${callId}`, data.token);
-        sessionStorage.setItem(`dailyRoomUrl:${callId}`, data.roomUrl);
+        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
+        window.open(urlWithToken, '_blank', 'noopener,noreferrer');
 
-        router.push(`/call/${callId}`);
       } catch (e: any) {
         toast({
           variant: 'destructive',
