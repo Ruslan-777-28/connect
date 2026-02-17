@@ -39,6 +39,8 @@ export async function startVideoCall(
   receiverId: string
 ): Promise<{ callId: string }> {
   const callWindow = window.open('about:blank', '_blank');
+  console.log('[CALL] popup window =', callWindow);
+
   if (!callWindow) {
     throw new Error('Popup blocked. Allow popups for this site and try again.');
   }

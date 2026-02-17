@@ -128,22 +128,24 @@ export function CallManager() {
 
     const accept = async () => {
       const callWindow = window.open('about:blank', '_blank');
-      if (!callWindow) {
-        toast({
-          variant: 'destructive',
-          title: 'Popup blocked',
-          description: 'Allow popups for this site, then press Accept again.',
-        });
-        return;
-      }
-      try {
-        callWindow.opener = null;
-      } catch {}
+      console.log('[ACCEPT] popup window =', callWindow);
     
       setBusyCallId(callId);
     
       try {
+        const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
+
+        if (!callWindow) {
+          const endCall = httpsCallable(functions, 'endCall');
+          await endCall({ callId, reason: 'popup_blocked' });
+          throw new Error('Popup blocked by browser. Allow pop-ups for this site.');
+        }
+
+        try {
+          callWindow.opener = null;
+        } catch {}
+    
         const snap = await getDoc(callDocRef);
         const current = snap.data() as Call | undefined;
     
@@ -156,8 +158,7 @@ export function CallManager() {
           callWindow.close();
           return;
         }
-
-        const functions = getFunctions(app, 'us-central1');
+    
         const acceptCall = httpsCallable<
           { callId: string },
           AcceptCallResult
@@ -221,9 +222,11 @@ export function CallManager() {
           }
         }, 1000);
       } catch (e: any) {
-        try {
-          callWindow.close();
-        } catch {}
+        if (callWindow) {
+          try {
+            callWindow.close();
+          } catch {}
+        }
         toast({
           variant: 'destructive',
           title: 'Accept failed',
