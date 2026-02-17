@@ -1,7 +1,7 @@
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getFirestore, doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { getFirestore, doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import type { FirebaseApp } from 'firebase/app';
 import type { Call } from '@/lib/types';
 
@@ -102,15 +102,21 @@ export async function startVideoCall(app: FirebaseApp, receiverId: string): Prom
   );
 
   // ✅ missed guard (не завершуємо якщо вже accepted/ended)
-  missedTimeout = setTimeout(() => {
-    if (latestStatus === 'accepted' || latestStatus === 'ended') return;
-    endCallClient(app, callId, 'missed');
-    cleanup();
+  missedTimeout = setTimeout(async () => {
+    const snap = await getDoc(callDocRef);
+    const current = snap.data() as Call | undefined;
+
+    if (current?.status === 'ringing') {
+      await endCallClient(app, callId, 'missed');
+    }
   }, 45_000);
 
   // ✅ закрили вкладку — завершуємо (але тільки якщо ще не ended)
   closedCheckInterval = setInterval(() => {
-    if (latestStatus === 'ended') return;
+    if (latestStatus === 'ended') {
+      cleanup();
+      return;
+    };
     if (callWindow.closed) {
       endCallClient(app, callId, 'caller_closed_tab');
       cleanup();

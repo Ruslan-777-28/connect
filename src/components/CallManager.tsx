@@ -9,7 +9,7 @@ import {
   useFirebaseApp,
   useDoc,
 } from '@/firebase';
-import { collection, query, where, doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot, Unsubscribe, getDoc } from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -119,6 +119,19 @@ export function CallManager() {
     const accept = async () => {
       setBusyCallId(callId);
       try {
+        const callDocRef = doc(firestore, 'calls', callId);
+        const snap = await getDoc(callDocRef);
+        const current = snap.data() as Call | undefined;
+    
+        if (!current || current.status !== 'ringing') {
+          toast({
+            variant: 'destructive',
+            title: 'Call no longer available',
+            description: 'This call has already ended.',
+          });
+          return;
+        }
+
         const functions = getFunctions(app, 'us-central1');
         const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
     
@@ -146,9 +159,7 @@ export function CallManager() {
           if (unsubscribe) { unsubscribe(); unsubscribe = null; }
           if (closedCheckInterval) { clearInterval(closedCheckInterval); closedCheckInterval = null; }
         };
-    
-        const callDocRef = doc(firestore, 'calls', callId);
-    
+        
         unsubscribe = onSnapshot(
           callDocRef,
           (snapshot) => {
@@ -164,7 +175,10 @@ export function CallManager() {
         );
     
         closedCheckInterval = setInterval(() => {
-          if (latestStatus === 'ended') return;
+          if (latestStatus === 'ended') {
+            cleanup();
+            return;
+          }
           if (callWindow.closed) {
             const endCall = httpsCallable(functions, 'endCall');
             endCall({ callId, reason: 'receiver_closed_tab' });
