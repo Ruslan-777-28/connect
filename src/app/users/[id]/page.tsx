@@ -47,22 +47,14 @@ export default function UserProfilePage() {
       description: `Calling ${userProfile.name}. Opening call...`,
     });
     try {
-      const callData = await startVideoCall(app, userProfile.id);
-
-      if (!callData?.callId || !callData?.token || !callData.roomUrl) {
-        throw new Error('startCall did not return the expected data.');
-      }
-      
-      sessionStorage.setItem(`dailyToken:${callData.callId}`, callData.token);
-      sessionStorage.setItem(`dailyRoomUrl:${callData.callId}`, callData.roomUrl);
-
-      router.push(`/call/${callData.callId}`);
+      await startVideoCall(app, userProfile.id);
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
+    } finally {
       setIsCalling(false);
     }
   };
