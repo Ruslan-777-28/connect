@@ -41,28 +41,29 @@ export default function UserProfilePage() {
     }
     if (isCalling) return;
 
-    const callWindow = window.open('about:blank', '_blank', 'noopener');
-    if (!callWindow) {
-      toast({
-        variant: 'destructive',
-        title: 'Popup Blocked',
-        description: 'Please allow pop-ups for this site to place a call.',
-      });
-      return;
-    }
-
     setIsCalling(true);
     toast({
       title: 'Starting call...',
-      description: `Calling ${userProfile.name}. Please allow pop-ups.`,
+      description: `Calling ${userProfile.name}.`,
     });
+
+    const callWindow = window.open(
+      'about:blank',
+      '_blank',
+      'noopener,noreferrer'
+    );
+
+    if (!callWindow) {
+      toast({
+        title: 'Pop-ups blocked',
+        description: 'Opening the call in this tab instead.',
+      });
+    }
 
     try {
       await startVideoCall(app, userProfile.id, callWindow);
     } catch (error: any) {
-      if (!callWindow.closed) {
-        callWindow.close();
-      }
+      if (callWindow && !callWindow.closed) callWindow.close();
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -72,7 +73,7 @@ export default function UserProfilePage() {
       setIsCalling(false);
     }
   };
-  
+
   if (loading) {
     return (
       <div className="container mx-auto max-w-4xl px-4 py-8">

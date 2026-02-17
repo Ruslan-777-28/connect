@@ -37,7 +37,7 @@ async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
 export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string,
-  callWindow: Window,
+  callWindow?: Window | null
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
@@ -47,40 +47,38 @@ export async function startVideoCall(
       functions,
       'startCall'
     );
+
     const res = await startCall({ receiverId });
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      if (!callWindow.closed) {
-        callWindow.close();
-      }
+      if (callWindow && !callWindow.closed) callWindow.close();
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
     const { callId, roomUrl, token } = data;
-
     const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
-    callWindow.location.href = urlWithToken;
 
+    // ✅ Open Daily either in provided popup window, or fallback to same-tab redirect
+    if (callWindow && !callWindow.closed) {
+      callWindow.location.href = urlWithToken;
+    } else {
+      window.location.assign(urlWithToken);
+    }
+
+    // --- lifecycle tracking ---
     let unsubscribe: Unsubscribe | null = null;
     let missedTimeout: ReturnType<typeof setTimeout> | null = null;
     let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
-
     let latestStatus: Call['status'] | null = null;
 
     const cleanup = () => {
-      if (unsubscribe) {
-        unsubscribe();
-        unsubscribe = null;
-      }
-      if (missedTimeout) {
-        clearTimeout(missedTimeout);
-        missedTimeout = null;
-      }
-      if (closedCheckInterval) {
-        clearInterval(closedCheckInterval);
-        closedCheckInterval = null;
-      }
+      if (unsubscribe) unsubscribe();
+      unsubscribe = null;
+      if (missedTimeout) clearTimeout(missedTimeout);
+      missedTimeout = null;
+      if (closedCheckInterval) clearInterval(closedCheckInterval);
+      closedCheckInterval = null;
     };
 
     const callDocRef = doc(firestore, 'calls', callId);
@@ -93,7 +91,6 @@ export async function startVideoCall(
           cleanup();
           return;
         }
-
         const callData = snapshot.data() as Call | undefined;
         latestStatus = (callData?.status as any) ?? null;
 
@@ -104,10 +101,7 @@ export async function startVideoCall(
           }
           return;
         }
-
-        if (latestStatus === 'ended') {
-          cleanup();
-        }
+        if (latestStatus === 'ended') cleanup();
       },
       (err) => {
         console.error('onSnapshot error:', err);
@@ -125,28 +119,28 @@ export async function startVideoCall(
       cleanup();
     }, 45_000);
 
-    const openedAt = Date.now();
-    const CLOSE_GRACE_MS = 6000; // 6 секунд не реагуємо на closed
+    // ✅ Only check closed tab if we actually have a popup window
+    if (callWindow) {
+      const openedAt = Date.now();
+      const CLOSE_GRACE_MS = 6000;
 
-    closedCheckInterval = setInterval(async () => {
-      if (latestStatus === 'ended') {
-        cleanup();
-        return;
-      }
+      closedCheckInterval = setInterval(async () => {
+        if (latestStatus === 'ended') {
+          cleanup();
+          return;
+        }
+        if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-      // не чіпаємо перші 6 секунд, щоб не “вбивати” дзвінок через popup policy
-      if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
-
-      if (callWindow.closed) {
-        // тут уже логічно вважати, що користувач реально закрив вкладку дзвінка
-        await endCallClient(app, callId, 'caller_closed_tab');
-        cleanup();
-      }
-    }, 1000);
+        if (callWindow.closed) {
+          await endCallClient(app, callId, 'caller_closed_tab');
+          cleanup();
+        }
+      }, 1000);
+    }
 
     return { callId };
   } catch (error) {
-    if (!callWindow.closed) {
+    if (callWindow && !callWindow.closed) {
       callWindow.close();
     }
     throw error;

@@ -35,28 +35,27 @@ export function UserCard({ user }: UserCardProps) {
     }
     if (isCalling) return;
 
-    const callWindow = window.open('about:blank', '_blank', 'noopener');
+    setIsCalling(true);
+    toast({ title: 'Starting call...', description: `Calling ${user.name}.` });
+
+    // Try popup first
+    const callWindow = window.open(
+      'about:blank',
+      '_blank',
+      'noopener,noreferrer'
+    );
+
     if (!callWindow) {
       toast({
-        variant: 'destructive',
-        title: 'Popup Blocked',
-        description: 'Please allow pop-ups for this site to place a call.',
+        title: 'Pop-ups blocked',
+        description: 'Opening the call in this tab instead.',
       });
-      return;
     }
 
-    setIsCalling(true);
-    toast({
-      title: 'Starting call...',
-      description: `Calling ${user.name}. Please allow pop-ups.`,
-    });
-
     try {
-      await startVideoCall(app, user.id, callWindow);
+      await startVideoCall(app, user.id, callWindow); // ✅ callWindow can be null now
     } catch (error: any) {
-      if (!callWindow.closed) {
-        callWindow.close();
-      }
+      if (callWindow && !callWindow.closed) callWindow.close();
       toast({
         variant: 'destructive',
         title: 'Error',
