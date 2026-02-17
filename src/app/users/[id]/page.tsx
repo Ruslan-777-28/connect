@@ -43,8 +43,8 @@ export default function UserProfilePage() {
 
     setIsCalling(true);
     toast({
-      title: 'Calling...',
-      description: `Calling ${userProfile.name}. Opening call...`,
+      title: 'Starting call...',
+      description: `Calling ${userProfile.name}. Please allow pop-ups.`,
     });
     try {
       await startVideoCall(app, userProfile.id);

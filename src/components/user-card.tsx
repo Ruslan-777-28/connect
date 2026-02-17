@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { UserAvatar } from '@/components/user-avatar';
 import type { UserProfile } from '@/lib/types';
@@ -18,8 +17,6 @@ interface UserCardProps {
 
 export function UserCard({ user }: UserCardProps) {
   const { toast } = useToast();
-  const router = useRouter();
-
   const app = useFirebaseApp();
   const { user: currentUser } = useUser();
   const [isCalling, setIsCalling] = useState(false);
@@ -40,8 +37,8 @@ export function UserCard({ user }: UserCardProps) {
 
     setIsCalling(true);
     toast({
-      title: 'Calling...',
-      description: `Calling ${user.name}. Opening call...`,
+      title: 'Starting call...',
+      description: `Calling ${user.name}. Please allow pop-ups.`,
     });
 
     try {

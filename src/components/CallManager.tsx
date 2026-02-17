@@ -9,7 +9,7 @@ import {
   useFirebaseApp,
   useDoc,
 } from '@/firebase';
-import { collection, query, where, doc } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
@@ -135,7 +135,33 @@ export function CallManager() {
         const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(
           data.token
         )}`;
-        window.open(urlWithToken, '_blank', 'noopener,noreferrer');
+        const callWindow = window.open(urlWithToken, '_blank', 'noopener,noreferrer');
+        
+        let unsubscribe: Unsubscribe | null = null;
+        let closedCheckInterval: NodeJS.Timeout | null = null;
+
+        const cleanup = () => {
+            if (unsubscribe) unsubscribe();
+            if (closedCheckInterval) clearInterval(closedCheckInterval);
+        };
+
+        const callDocRef = doc(firestore, 'calls', callId);
+
+        unsubscribe = onSnapshot(callDocRef, (snapshot) => {
+            const callData = snapshot.data() as Call;
+            if (callData?.status === 'ended') {
+                cleanup();
+            }
+        });
+
+        closedCheckInterval = setInterval(async () => {
+            if (callWindow?.closed) {
+                const endCall = httpsCallable(functions, 'endCall');
+                await endCall({ callId, reason: 'receiver_closed_tab' });
+                cleanup();
+            }
+        }, 1000);
+
       } catch (e: any) {
         toast({
           variant: 'destructive',
