@@ -147,6 +147,18 @@ export function CallManager() {
         const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
 
+        const snap = await getDoc(callDocRef);
+        const current = snap.data() as Call | undefined;
+        if (!current || current.status !== 'ringing') {
+          toast({
+            variant: 'destructive',
+            title: 'Call no longer available',
+            description: 'This call has already ended.',
+          });
+          try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
+          return;
+        }
+
         const acceptCall = httpsCallable<
           { callId: string },
           AcceptCallResult
@@ -286,7 +298,7 @@ export function CallManager() {
         </div>
       ),
     });
-  }, [incomingCalls, user, pathname, router, toast, app, busyCallId]);
+  }, [incomingCalls, user, pathname, router, toast, app, firestore, busyCallId]);
 
   return activeCallWithCaller ? (
     <ActiveCallBar call={activeCallWithCaller} />
