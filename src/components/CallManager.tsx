@@ -127,7 +127,7 @@ export function CallManager() {
     const callerName = (call?.callerName as string) || 'Someone';
 
     const accept = async () => {
-      const callWindow = window.open('about:blank', '_blank', 'noopener,noreferrer');
+      const callWindow = window.open('about:blank', '_blank', 'noopener');
       if (!callWindow) {
         toast({
           variant: 'destructive',
@@ -136,11 +136,11 @@ export function CallManager() {
         });
         return;
       }
-      try { callWindow.opener = null; } catch {}
     
       setBusyCallId(callId);
     
       try {
+        try { callWindow.opener = null; } catch {}
         const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
 
