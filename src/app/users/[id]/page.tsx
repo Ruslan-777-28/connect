@@ -47,23 +47,25 @@ export default function UserProfilePage() {
       description: `Calling ${userProfile.name}.`,
     });
 
-    const callWindow = window.open(
-      'about:blank',
-      '_blank',
-      'noopener,noreferrer'
-    );
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    if (!callWindow) {
+    const callWindow = mobile ? null : window.open('about:blank', '_blank', 'noopener,noreferrer');
+    if (!mobile && !callWindow) {
       toast({
-        title: 'Pop-ups blocked',
-        description: 'Opening the call in this tab instead.',
+        variant: 'destructive',
+        title: 'Popup Blocked',
+        description: 'Please allow pop-ups for this site to place a call.',
       });
+      setIsCalling(false);
+      return;
     }
 
     try {
       await startVideoCall(app, userProfile.id, callWindow);
     } catch (error: any) {
-      if (callWindow && !callWindow.closed) callWindow.close();
+      try {
+        if (callWindow && !callWindow.closed) callWindow.close();
+      } catch {}
       toast({
         variant: 'destructive',
         title: 'Error',

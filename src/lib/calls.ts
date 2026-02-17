@@ -11,6 +11,29 @@ import {
 import type { FirebaseApp } from 'firebase/app';
 import type { Call } from '@/lib/types';
 
+function isMobileBrowser() {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function openDaily(urlWithToken: string, callWindow?: Window | null) {
+  const mobile = isMobileBrowser();
+
+  if (mobile) {
+    // Mobile Chrome/Safari: safest, no popups
+    window.location.assign(urlWithToken);
+    return null;
+  }
+
+  const w = callWindow ?? window.open('about:blank', '_blank', 'noopener,noreferrer');
+  if (!w) return null;
+
+  try { w.opener = null; } catch {}
+  w.location.href = urlWithToken;
+  return w;
+}
+
+
 type StartCallResult = {
   callId: string;
   roomName: string;
@@ -37,7 +60,7 @@ async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
 export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string,
-  callWindow?: Window | null
+  callWindow: Window | null
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
@@ -59,12 +82,9 @@ export async function startVideoCall(
     const { callId, roomUrl, token } = data;
     const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
 
-    // ✅ Open Daily either in provided popup window, or fallback to same-tab redirect
-    if (callWindow && !callWindow.closed) {
-      callWindow.location.href = urlWithToken;
-    } else {
-      window.location.assign(urlWithToken);
-    }
+    // Opens in same tab on mobile, in popup tab on desktop
+    const openedWindow = openDaily(urlWithToken, callWindow);
+
 
     // --- lifecycle tracking ---
     let unsubscribe: Unsubscribe | null = null;
@@ -119,8 +139,7 @@ export async function startVideoCall(
       cleanup();
     }, 45_000);
 
-    // ✅ Only check closed tab if we actually have a popup window
-    if (callWindow) {
+    if (openedWindow) {
       const openedAt = Date.now();
       const CLOSE_GRACE_MS = 6000;
 
@@ -131,7 +150,7 @@ export async function startVideoCall(
         }
         if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-        if (callWindow.closed) {
+        if (openedWindow.closed) {
           await endCallClient(app, callId, 'caller_closed_tab');
           cleanup();
         }
@@ -140,9 +159,9 @@ export async function startVideoCall(
 
     return { callId };
   } catch (error) {
-    if (callWindow && !callWindow.closed) {
-      callWindow.close();
-    }
+    try {
+      if (callWindow && !callWindow.closed) callWindow.close();
+    } catch {}
     throw error;
   }
 }

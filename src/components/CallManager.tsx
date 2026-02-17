@@ -127,37 +127,25 @@ export function CallManager() {
     const callerName = (call?.callerName as string) || 'Someone';
 
     const accept = async () => {
-      const callWindow = window.open(
-        'about:blank',
-        '_blank',
-        'noopener,noreferrer'
-      );
+      const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const callWindow = mobile ? null : window.open('about:blank', '_blank', 'noopener,noreferrer');
 
-      if (!callWindow) {
+      if (!mobile && !callWindow) {
         toast({
-          title: 'Pop-ups blocked',
-          description: 'Opening the call in this tab instead.',
+          variant: 'destructive',
+          title: 'Popup Blocked',
+          description: 'Please allow popups and try again.',
         });
+        return;
       }
+    
+      try { if (callWindow) callWindow.opener = null; } catch {}
 
       setBusyCallId(callId);
 
       try {
         const functions = getFunctions(app, 'us-central1');
         const callDocRef = doc(firestore, 'calls', callId);
-
-        const snap = await getDoc(callDocRef);
-        const current = snap.data() as Call | undefined;
-
-        if (!current || current.status !== 'ringing') {
-          toast({
-            variant: 'destructive',
-            title: 'Call no longer available',
-            description: 'This call has already ended.',
-          });
-          if (callWindow && !callWindow.closed) callWindow.close();
-          return;
-        }
 
         const acceptCall = httpsCallable<
           { callId: string },
@@ -167,7 +155,7 @@ export function CallManager() {
         const data = res.data;
 
         if (!data?.token || !data?.roomUrl) {
-          if (callWindow && !callWindow.closed) callWindow.close();
+          try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
           throw new Error('acceptCall did not return token/roomUrl');
         }
 
@@ -175,47 +163,51 @@ export function CallManager() {
           data.token
         )}`;
 
-        if (callWindow && !callWindow.closed) {
-          callWindow.location.href = urlWithToken;
-        } else {
-          window.location.assign(urlWithToken); // ✅ fallback
+        const openedWindow = (mobile ? null : callWindow);
+
+        // mobile: same-tab redirect
+        if (mobile) {
+            window.location.assign(urlWithToken);
+        } else if (openedWindow) {
+            openedWindow.location.href = urlWithToken;
         }
 
-        if (callWindow) {
-          let unsubscribe: Unsubscribe | null = null;
-          let closedCheckInterval: ReturnType<typeof setInterval> | null =
-            null;
-          let latestStatus: Call['status'] | null = null;
 
-          const cleanup = () => {
-            if (unsubscribe) {
-              unsubscribe();
-              unsubscribe = null;
-            }
-            if (closedCheckInterval) {
-              clearInterval(closedCheckInterval);
-              closedCheckInterval = null;
-            }
-          };
+        let unsubscribe: Unsubscribe | null = null;
+        let closedCheckInterval: ReturnType<typeof setInterval> | null =
+          null;
+        let latestStatus: Call['status'] | null = null;
 
-          unsubscribe = onSnapshot(
-            callDocRef,
-            (snapshot) => {
-              if (!snapshot.exists()) {
-                latestStatus = null;
-                cleanup();
-                return;
-              }
-              const callData = snapshot.data() as Call | undefined;
-              latestStatus = (callData?.status as any) ?? null;
-              if (latestStatus === 'ended') cleanup();
-            },
-            (err) => {
-              console.error('onSnapshot error:', err);
+        const cleanup = () => {
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+          }
+          if (closedCheckInterval) {
+            clearInterval(closedCheckInterval);
+            closedCheckInterval = null;
+          }
+        };
+
+        unsubscribe = onSnapshot(
+          callDocRef,
+          (snapshot) => {
+            if (!snapshot.exists()) {
+              latestStatus = null;
               cleanup();
+              return;
             }
-          );
-
+            const callData = snapshot.data() as Call | undefined;
+            latestStatus = (callData?.status as any) ?? null;
+            if (latestStatus === 'ended') cleanup();
+          },
+          (err) => {
+            console.error('onSnapshot error:', err);
+            cleanup();
+          }
+        );
+        
+        if (!mobile && openedWindow) {
           const openedAt = Date.now();
           const CLOSE_GRACE_MS = 6000;
 
@@ -226,15 +218,16 @@ export function CallManager() {
             }
             if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-            if (callWindow.closed) {
+            if (openedWindow.closed) {
               const endCall = httpsCallable(functions, 'endCall');
               endCall({ callId, reason: 'receiver_closed_tab' });
               cleanup();
             }
           }, 1000);
         }
+
       } catch (e: any) {
-        if (callWindow && !callWindow.closed) callWindow.close();
+        try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
         toast({
           variant: 'destructive',
           title: 'Accept failed',
