@@ -214,31 +214,48 @@ exports.acceptCall = onCall(
 /**
  * endCall
  * data: { callId: string, reason?: string }
- * returns: { ok: true }
+ * returns: { ok: true, alreadyEnded?: true }
  */
 exports.endCall = onCall(
   { region: "us-central1" },
   async (request) => {
     const uid = requireAuth(request);
     const callId = assertString(request.data?.callId, "callId");
-    const reason = (typeof request.data?.reason === "string") ? request.data.reason.slice(0, 200) : null;
+    const reason =
+      typeof request.data?.reason === "string"
+        ? request.data.reason.slice(0, 200)
+        : null;
 
     const callRef = admin.firestore().doc(`calls/${callId}`);
-    const snap = await callRef.get();
-    if (!snap.exists) throw new HttpsError("not-found", "Call not found");
 
-    const call = snap.data();
-    const isParticipant = call.callerId === uid || call.receiverId === uid;
-    if (!isParticipant) throw new HttpsError("permission-denied", "Not a call participant");
+    const result = await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(callRef);
+      if (!snap.exists) {
+        throw new HttpsError("not-found", "Call not found");
+      }
 
-    await callRef.update({
-      status: "ended",
-      endedAt: admin.firestore.FieldValue.serverTimestamp(),
-      endedBy: uid,
-      endReason: reason || "ended",
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      const call = snap.data();
+      const isParticipant = call.callerId === uid || call.receiverId === uid;
+      if (!isParticipant) {
+        throw new HttpsError("permission-denied", "Not a call participant");
+      }
+
+      // ✅ Ідемпотентність: якщо вже ended — просто повертаємо ok
+      if (call.status === "ended") {
+        return { ok: true, alreadyEnded: true };
+      }
+
+      tx.update(callRef, {
+        status: "ended",
+        endedAt: admin.firestore.FieldValue.serverTimestamp(),
+        endedBy: uid,
+        endReason: reason || "ended",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true };
     });
 
-    return { ok: true };
+    return result;
   }
 );

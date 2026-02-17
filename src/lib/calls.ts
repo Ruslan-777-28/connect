@@ -13,43 +13,45 @@ type StartCallResult = {
   receiverId: string;
 };
 
+type EndCallResult = { ok: true; alreadyEnded?: true };
+
 async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
   try {
     const functions = getFunctions(app, 'us-central1');
-    const endCall = httpsCallable(functions, 'endCall');
+    const endCall = httpsCallable<{ callId: string; reason?: string }, EndCallResult>(functions, 'endCall');
     await endCall({ callId, reason });
   } catch (error) {
     console.error(`Failed to end call ${callId} with reason ${reason}:`, error);
   }
 }
 
-export async function startVideoCall(
-  app: FirebaseApp,
-  receiverId: string
-): Promise<{ callId: string }> {
+export async function startVideoCall(app: FirebaseApp, receiverId: string): Promise<{ callId: string }> {
   const functions = getFunctions(app, 'us-central1');
   const firestore = getFirestore(app);
 
-  const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(
-    functions,
-    'startCall'
-  );
-
+  const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(functions, 'startCall');
   const res = await startCall({ receiverId });
   const data = res.data;
 
-  if (!data?.callId || !data?.token) {
-    throw new Error('startCall did not return callId or token');
+  if (!data?.callId || !data?.token || !data?.roomUrl) {
+    throw new Error('startCall did not return callId/token/roomUrl');
   }
 
   const { callId, roomUrl, token } = data;
-
   const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
+
   const callWindow = window.open(urlWithToken, '_blank', 'noopener,noreferrer');
+  if (!callWindow) {
+    // ✅ popup blocker
+    await endCallClient(app, callId, 'popup_blocked');
+    throw new Error('Popup was blocked. Please allow popups for this site.');
+  }
 
   let unsubscribe: Unsubscribe | null = null;
-  let missedTimeout: NodeJS.Timeout | null = null;
-  let closedCheckInterval: NodeJS.Timeout | null = null;
+  let missedTimeout: ReturnType<typeof setTimeout> | null = null;
+  let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
+
+  let latestStatus: Call['status'] | null = null;
 
   const cleanup = () => {
     if (unsubscribe) {
@@ -68,27 +70,49 @@ export async function startVideoCall(
 
   const callDocRef = doc(firestore, 'calls', callId);
 
-  unsubscribe = onSnapshot(callDocRef, (snapshot) => {
-    const callData = snapshot.data() as Call;
-    if (callData?.status === 'accepted' || callData?.status === 'ended') {
-      if (missedTimeout) {
-        clearTimeout(missedTimeout);
-        missedTimeout = null;
+  unsubscribe = onSnapshot(
+    callDocRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        latestStatus = null;
+        cleanup();
+        return;
       }
-      if (callData?.status === 'ended') {
+
+      const callData = snapshot.data() as Call | undefined;
+      latestStatus = (callData?.status as any) ?? null;
+
+      if (latestStatus === 'accepted') {
+        // ✅ як тільки accepted — missed вже не може спрацювати
+        if (missedTimeout) {
+          clearTimeout(missedTimeout);
+          missedTimeout = null;
+        }
+        return;
+      }
+
+      if (latestStatus === 'ended') {
         cleanup();
       }
+    },
+    (err) => {
+      console.error('onSnapshot error:', err);
+      cleanup();
     }
-  });
+  );
 
+  // ✅ missed guard (не завершуємо якщо вже accepted/ended)
   missedTimeout = setTimeout(() => {
+    if (latestStatus === 'accepted' || latestStatus === 'ended') return;
     endCallClient(app, callId, 'missed');
     cleanup();
-  }, 45000);
+  }, 45_000);
 
-  closedCheckInterval = setInterval(async () => {
-    if (callWindow?.closed) {
-      await endCallClient(app, callId, 'caller_closed_tab');
+  // ✅ закрили вкладку — завершуємо (але тільки якщо ще не ended)
+  closedCheckInterval = setInterval(() => {
+    if (latestStatus === 'ended') return;
+    if (callWindow.closed) {
+      endCallClient(app, callId, 'caller_closed_tab');
       cleanup();
     }
   }, 1000);

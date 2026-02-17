@@ -120,48 +120,58 @@ export function CallManager() {
       setBusyCallId(callId);
       try {
         const functions = getFunctions(app, 'us-central1');
-        const acceptCall = httpsCallable<
-          { callId: string },
-          AcceptCallResult
-        >(functions, 'acceptCall');
-
+        const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
+    
         const res = await acceptCall({ callId });
         const data = res.data;
-
+    
         if (!data?.token || !data?.roomUrl) {
           throw new Error('acceptCall did not return token/roomUrl');
         }
-
-        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(
-          data.token
-        )}`;
+    
+        const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
         const callWindow = window.open(urlWithToken, '_blank', 'noopener,noreferrer');
-        
+    
+        if (!callWindow) {
+          const endCall = httpsCallable(functions, 'endCall');
+          await endCall({ callId, reason: 'popup_blocked' });
+          throw new Error('Popup was blocked. Please allow popups for this site.');
+        }
+    
         let unsubscribe: Unsubscribe | null = null;
-        let closedCheckInterval: NodeJS.Timeout | null = null;
-
+        let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
+        let latestStatus: Call['status'] | null = null;
+    
         const cleanup = () => {
-            if (unsubscribe) unsubscribe();
-            if (closedCheckInterval) clearInterval(closedCheckInterval);
+          if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+          if (closedCheckInterval) { clearInterval(closedCheckInterval); closedCheckInterval = null; }
         };
-
+    
         const callDocRef = doc(firestore, 'calls', callId);
-
-        unsubscribe = onSnapshot(callDocRef, (snapshot) => {
-            const callData = snapshot.data() as Call;
-            if (callData?.status === 'ended') {
-                cleanup();
-            }
-        });
-
-        closedCheckInterval = setInterval(async () => {
-            if (callWindow?.closed) {
-                const endCall = httpsCallable(functions, 'endCall');
-                await endCall({ callId, reason: 'receiver_closed_tab' });
-                cleanup();
-            }
+    
+        unsubscribe = onSnapshot(
+          callDocRef,
+          (snapshot) => {
+            if (!snapshot.exists()) { latestStatus = null; cleanup(); return; }
+            const callData = snapshot.data() as Call | undefined;
+            latestStatus = (callData?.status as any) ?? null;
+            if (latestStatus === 'ended') cleanup();
+          },
+          (err) => {
+            console.error('onSnapshot error:', err);
+            cleanup();
+          }
+        );
+    
+        closedCheckInterval = setInterval(() => {
+          if (latestStatus === 'ended') return;
+          if (callWindow.closed) {
+            const endCall = httpsCallable(functions, 'endCall');
+            endCall({ callId, reason: 'receiver_closed_tab' });
+            cleanup();
+          }
         }, 1000);
-
+    
       } catch (e: any) {
         toast({
           variant: 'destructive',
