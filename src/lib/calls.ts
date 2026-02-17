@@ -11,22 +11,17 @@ type StartCallResult = {
   receiverId: string;
 };
 
-export async function startVideoCall(app: FirebaseApp, receiverId: string): Promise<{ callId: string }> {
+export async function startVideoCall(app: FirebaseApp, receiverId: string): Promise<StartCallResult> {
   const functions = getFunctions(app, 'us-central1');
 
+  // Use httpsCallable to interact with the 'startCall' Firebase Function.
+  // This is the correct way to call a Callable Function, avoiding CORS issues
+  // and handling authentication tokens automatically.
   const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(functions, 'startCall');
 
   const res = await startCall({ receiverId });
-  const data = res.data;
 
-  if (!data?.callId || !data?.token) {
-    throw new Error('startCall did not return callId/token');
-  }
-
-  // The token is NOT written to Firestore. It is held locally.
-  // The key is tied to the callId.
-  sessionStorage.setItem(`dailyToken:${data.callId}`, data.token);
-  sessionStorage.setItem(`dailyRoomUrl:${data.callId}`, data.roomUrl);
-
-  return { callId: data.callId };
+  // The 'data' property of the result contains the object returned by the function.
+  // The Firebase SDK handles throwing an error if the call fails on the backend.
+  return res.data;
 }

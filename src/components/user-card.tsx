@@ -45,10 +45,18 @@ export function UserCard({ user }: UserCardProps) {
     });
 
     try {
-      const { callId } = await startVideoCall(app, user.id);
+      const callData = await startVideoCall(app, user.id);
 
-      // важливо: переходимо на сторінку дзвінка
-      router.push(`/call/${callId}`);
+      if (!callData?.callId || !callData?.token || !callData.roomUrl) {
+        throw new Error('startCall did not return the expected data.');
+      }
+
+      // The component now handles storing the token and URL
+      sessionStorage.setItem(`dailyToken:${callData.callId}`, callData.token);
+      sessionStorage.setItem(`dailyRoomUrl:${callData.callId}`, callData.roomUrl);
+
+      // Redirect to the call page, which will handle joining the room
+      router.push(`/call/${callData.callId}`);
     } catch (error: any) {
       toast({
         variant: 'destructive',
