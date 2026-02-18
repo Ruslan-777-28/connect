@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { onSnapshot, doc } from 'firebase/firestore';
 import type { Call } from '@/lib/types';
 import { endCallClient } from '@/lib/calls';
@@ -29,11 +29,12 @@ function buildDailyUrl(roomUrl: string, token: string) {
   return url.toString();
 }
 
-export default function CallPage({ params }: { params: { callId: string } }) {
+export default function CallPage() {
+  const params = useParams<{ callId: string }>();
+  const callId = params.callId;
   const router = useRouter();
   const app = useFirebaseApp();
   const firestore = useFirestore();
-  const callId = params.callId;
 
   const [callData, setCallData] = useState<Call | null>(null);
   const [loading, setLoading] = useState(true);
