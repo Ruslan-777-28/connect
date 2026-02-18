@@ -101,10 +101,7 @@ export function CallManager() {
 
   // --- Effect for showing INCOMING call toasts ---
   useEffect(() => {
-    if (!user?.uid) {
-      return;
-    }
-    if (!firestore) {
+    if (!user?.uid || !firestore) {
       return;
     }
 
@@ -236,16 +233,17 @@ export function CallManager() {
 
               if (!mobile && openedWindow) {
                 const openedAt = Date.now();
-                const CLOSE_GRACE_MS = 6000;
+                const CLOSE_GRACE_MS = 15_000;
 
                 closedCheckInterval = setInterval(() => {
-                  if (latestStatus === 'ended') {
-                    cleanup();
-                    return;
-                  }
+                  if (latestStatus === 'ended') { cleanup(); return; }
+                  if (latestStatus !== 'ringing') return;
                   if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-                  if (openedWindow.closed) {
+                  let isClosed: boolean | null = null;
+                  try { isClosed = openedWindow.closed; } catch { isClosed = null; }
+
+                  if (isClosed === true) {
                     const endCall = httpsCallable(functions, 'endCall');
                     endCall({ callId, reason: 'receiver_closed_tab' });
                     cleanup();

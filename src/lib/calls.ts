@@ -28,7 +28,9 @@ function openDaily(urlWithToken: string, callWindow?: Window | null) {
   const w = callWindow ?? window.open('about:blank', '_blank');
   if (!w) return null;
 
-  try { w.opener = null; } catch {}
+  try {
+    w.opener = null;
+  } catch {}
   w.location.replace(urlWithToken);
   return w;
 }
@@ -131,28 +133,25 @@ export async function startVideoCall(
       }
     );
 
-    missedTimeout = setTimeout(async () => {
-      const snap = await getDoc(callDocRef);
-      const current = snap.data() as Call | undefined;
-
-      if (current?.status === 'ringing') {
-        await endCallClient(app, callId, 'missed');
-      }
+    // missed = тільки UX, без endCall
+    missedTimeout = setTimeout(() => {
       cleanup();
     }, 45_000);
 
-    if (openedWindow) {
+    const mobile = isMobileBrowser();
+    if (!mobile && openedWindow) {
       const openedAt = Date.now();
-      const CLOSE_GRACE_MS = 6000;
+      const CLOSE_GRACE_MS = 15_000;
 
       closedCheckInterval = setInterval(async () => {
-        if (latestStatus === 'ended') {
-          cleanup();
-          return;
-        }
+        if (latestStatus === 'ended') { cleanup(); return; }
+        if (latestStatus !== 'ringing') return;
         if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-        if (openedWindow.closed) {
+        let isClosed: boolean | null = null;
+        try { isClosed = openedWindow.closed; } catch { isClosed = null; }
+
+        if (isClosed === true) {
           await endCallClient(app, callId, 'caller_closed_tab');
           cleanup();
         }
