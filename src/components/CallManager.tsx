@@ -38,7 +38,7 @@ export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
   const app = useFirebaseApp();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
   const initializedRef = useRef(false);
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
@@ -109,7 +109,7 @@ export function CallManager() {
       activeCallUnsub.current = null;
     }
     if (incomingToastIdRef.current) {
-      toast.dismiss(incomingToastIdRef.current);
+      dismiss(incomingToastIdRef.current);
       incomingToastIdRef.current = null;
     }
   };
@@ -202,15 +202,18 @@ export function CallManager() {
               }
 
               const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
+              
+              const openedWindow = (mobile ? null : callWindow);
+
               if (mobile) {
                 window.location.replace(urlWithToken);
-              } else if (callWindow) {
-                callWindow.location.replace(urlWithToken);
+              } else if (openedWindow) {
+                openedWindow.location.replace(urlWithToken);
               }
 
               // On success, the single-doc listener will hide the toast.
               
-              if (!mobile && callWindow) {
+              if (!mobile && openedWindow) {
                 let latestStatus: Call['status'] | null = 'ringing';
                 let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
                 
@@ -236,10 +239,10 @@ export function CallManager() {
                   }
                   if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-                  let isClosed = false;
-                  try { isClosed = callWindow.closed } catch { isClosed = false }
+                  let isClosed: boolean | null = null;
+                  try { isClosed = openedWindow.closed } catch { isClosed = null; }
                   
-                  if(isClosed) {
+                  if(isClosed === true) {
                     const endCall = httpsCallable(functions, 'endCall');
                     endCall({ callId, reason: 'receiver_closed_tab' });
                     cleanup();
@@ -319,7 +322,7 @@ export function CallManager() {
       unsub();
       hideIncomingToast(); // Also cleanup on main unmount/re-run
     };
-  }, [user?.uid, firestore, app, busyCallId, toast]);
+  }, [user?.uid, firestore, app, busyCallId, toast, dismiss]);
 
   return activeCallWithCaller ? (
     <ActiveCallBar call={activeCallWithCaller} />
