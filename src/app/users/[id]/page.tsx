@@ -41,17 +41,6 @@ export default function UserProfilePage() {
     }
     if (isCalling) return;
 
-    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const callWindow = mobile ? null : window.open('about:blank', '_blank');
-    if (!mobile && !callWindow) {
-      toast({
-        variant: 'destructive',
-        title: 'Popup Blocked',
-        description: 'Please allow pop-ups for this site to place a call.',
-      });
-      return;
-    }
-
     setIsCalling(true);
     toast({
       title: 'Starting call...',
@@ -59,17 +48,14 @@ export default function UserProfilePage() {
     });
 
     try {
-      await startVideoCall(app, userProfile.id, callWindow);
+      const { callId } = await startVideoCall(app, userProfile.id);
+      router.push(`/call/${callId}`);
     } catch (error: any) {
-      try {
-        if (callWindow && !callWindow.closed) callWindow.close();
-      } catch {}
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error.message || 'Could not initiate call.',
       });
-    } finally {
       setIsCalling(false);
     }
   };

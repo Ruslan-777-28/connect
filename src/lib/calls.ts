@@ -61,12 +61,10 @@ async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
 
 export async function startVideoCall(
   app: FirebaseApp,
-  receiverId: string,
-  callWindow: Window | null
+  receiverId: string
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
-    const firestore = getFirestore(app);
 
     const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(
       functions,
@@ -77,69 +75,19 @@ export async function startVideoCall(
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      try {
-        if (callWindow && !callWindow.closed) callWindow.close();
-      } catch {}
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
     const { callId, roomUrl, token } = data;
-    const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
 
-    // Opens in same tab on mobile, in popup tab on desktop
-    openDaily(urlWithToken, callWindow);
+    // Save to sessionStorage instead of opening a window
+    sessionStorage.setItem(`dailyToken:${callId}`, token);
+    sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 
-
-    // --- lifecycle tracking ---
-    let unsubscribe: Unsubscribe | null = null;
-    let missedTimeout: ReturnType<typeof setTimeout> | null = null;
-    let latestStatus: Call['status'] | null = null;
-
-    const cleanup = () => {
-      if (unsubscribe) unsubscribe();
-      unsubscribe = null;
-      if (missedTimeout) clearTimeout(missedTimeout);
-      missedTimeout = null;
-    };
-
-    const callDocRef = doc(firestore, 'calls', callId);
-
-    unsubscribe = onSnapshot(
-      callDocRef,
-      (snapshot) => {
-        if (!snapshot.exists()) {
-          latestStatus = null;
-          cleanup();
-          return;
-        }
-        const callData = snapshot.data() as Call | undefined;
-        latestStatus = (callData?.status as any) ?? null;
-
-        if (latestStatus === 'accepted') {
-          if (missedTimeout) {
-            clearTimeout(missedTimeout);
-            missedTimeout = null;
-          }
-          return;
-        }
-        if (latestStatus === 'ended') cleanup();
-      },
-      (err) => {
-        console.error('onSnapshot error:', err);
-        cleanup();
-      }
-    );
-
-    // missed = тільки UX, без endCall
-    missedTimeout = setTimeout(() => {
-      cleanup();
-    }, 45_000);
-
+    // Lifecycle tracking is removed from here
     return { callId };
   } catch (error) {
-    try {
-      if (callWindow && !callWindow.closed) callWindow.close();
-    } catch {}
+    // No window to close here anymore
     throw error;
   }
 }

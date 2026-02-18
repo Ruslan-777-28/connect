@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useState } from 'react';
 import { useFirebaseApp, useUser } from '@/firebase';
 import { startVideoCall } from '@/lib/calls';
+import { useRouter } from 'next/navigation';
 
 interface UserCardProps {
   user: UserProfile;
@@ -20,6 +21,7 @@ export function UserCard({ user }: UserCardProps) {
   const app = useFirebaseApp();
   const { user: currentUser } = useUser();
   const [isCalling, setIsCalling] = useState(false);
+  const router = useRouter();
 
   const handleCallClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -35,32 +37,18 @@ export function UserCard({ user }: UserCardProps) {
     }
     if (isCalling) return;
 
-    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const callWindow = mobile ? null : window.open('about:blank', '_blank');
-    if (!mobile && !callWindow) {
-      toast({
-        variant: 'destructive',
-        title: 'Popup Blocked',
-        description: 'Please allow pop-ups for this site to place a call.',
-      });
-      return;
-    }
-
     setIsCalling(true);
     toast({ title: 'Starting call...', description: `Calling ${user.name}.` });
 
     try {
-      await startVideoCall(app, user.id, callWindow); // ✅ callWindow can be null now
+      const { callId } = await startVideoCall(app, user.id);
+      router.push(`/call/${callId}`);
     } catch (error: any) {
-      try {
-        if (callWindow && !callWindow.closed) callWindow.close();
-      } catch {}
       toast({
         variant: 'destructive',
         title: 'Error',
         description: error?.message || 'Could not initiate call.',
       });
-    } finally {
       setIsCalling(false);
     }
   };
