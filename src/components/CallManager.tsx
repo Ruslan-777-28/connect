@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   useUser,
   useFirestore,
@@ -38,6 +39,7 @@ export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
   const app = useFirebaseApp();
+  const router = useRouter();
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
   const busyCallIdRef = useRef<string | null>(null);
@@ -46,35 +48,30 @@ export function CallManager() {
     busyCallIdRef.current = busyCallId;
   }, [busyCallId]);
 
-  // --- Safe dismiss handling ---
   const { dismiss } = useToast();
   const dismissRef = useRef(dismiss);
   useEffect(() => {
     dismissRef.current = dismiss;
   }, [dismiss]);
 
-  // --- Toast & Active Call State Refs ---
   const incomingToastIdRef = useRef<string | null>(null);
   const activeIncomingCallIdRef = useRef<string | null>(null);
   const activeCallUnsubRef = useRef<Unsubscribe | null>(null);
 
-  // --- Core Lifecycle Functions ---
   const hideIncomingToast = useCallback(() => {
-    if (activeCallUnsubRef.current) {
-      activeCallUnsubRef.current();
-      activeCallUnsubRef.current = null;
-    }
     const id = incomingToastIdRef.current;
     if (id) {
       dismissRef.current(id);
       incomingToastIdRef.current = null;
     }
     activeIncomingCallIdRef.current = null;
-  }, [dismissRef]);
+    activeCallUnsubRef.current?.();
+    activeCallUnsubRef.current = null;
+  }, []);
 
   const watchCallDoc = useCallback(
     (callId: string) => {
-      activeCallUnsubRef.current?.(); // Unsubscribe from previous if any
+      activeCallUnsubRef.current?.(); 
       activeCallUnsubRef.current = onSnapshot(
         doc(firestore, 'calls', callId),
         (snap) => {
@@ -91,14 +88,12 @@ export function CallManager() {
     [firestore, hideIncomingToast]
   );
   
-  // --- Global Unmount Cleanup ---
   useEffect(() => {
     return () => {
       activeCallUnsubRef.current?.();
     };
   }, []);
 
-  // --- Listen for ACTIVE calls (for both participants, for ActiveCallBar) ---
   const [activeCall, setActiveCall] = useState<Call | null>(null);
   const acceptedAsCallerQuery = useMemoFirebase(() => {
     if (!user) return null;
@@ -137,8 +132,6 @@ export function CallManager() {
     [activeCall, callerProfile]
   );
 
-
-  // --- Effect for showing INCOMING call toasts ---
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -171,30 +164,13 @@ export function CallManager() {
         const call = callDoc.data();
         const callerName = (call?.callerName as string) || 'Someone';
 
-        // Close previous toast if any
         hideIncomingToast();
 
         const accept = async () => {
           if (busyCallIdRef.current) return;
           busyCallIdRef.current = callId;
           setBusyCallId(callId);
-
           hideIncomingToast();
-
-          const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-          const callWindow = mobile ? null : window.open('about:blank', '_blank');
-
-          if (!mobile && !callWindow) {
-            pushToast({
-              variant: 'destructive',
-              title: 'Popup Blocked',
-              description: 'Please allow popups and try again.',
-            });
-            busyCallIdRef.current = null;
-            setBusyCallId(null);
-            return;
-          }
-          try { if (callWindow) callWindow.opener = null; } catch {}
 
           try {
             const functions = getFunctions(app, 'us-central1');
@@ -208,7 +184,6 @@ export function CallManager() {
                 title: 'Call no longer available',
                 description: 'This call has already ended.',
               });
-              try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
               return;
             }
 
@@ -217,21 +192,14 @@ export function CallManager() {
             const data = res.data;
 
             if (!data?.token || !data?.roomUrl) {
-              try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
               throw new Error('acceptCall did not return token/roomUrl');
             }
 
-            const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
-            const openedWindow = (mobile ? null : callWindow);
-
-            if (mobile) {
-              window.location.replace(urlWithToken);
-            } else if (openedWindow) {
-              openedWindow.location.replace(urlWithToken);
-            }
+            sessionStorage.setItem(`dailyToken:${callId}`, data.token);
+            sessionStorage.setItem(`dailyRoomUrl:${callId}`, data.roomUrl);
+            router.push(`/call/${callId}`);
             
           } catch (e: any) {
-            try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
             pushToast({
               variant: 'destructive',
               title: 'Accept failed',
@@ -247,7 +215,6 @@ export function CallManager() {
           if (busyCallIdRef.current) return;
           busyCallIdRef.current = callId;
           setBusyCallId(callId);
-
           hideIncomingToast();
 
           try {
@@ -287,7 +254,7 @@ export function CallManager() {
     });
 
     return () => unsub();
-  }, [user?.uid, firestore, app, watchCallDoc, hideIncomingToast]);
+  }, [user?.uid, firestore, app, watchCallDoc, hideIncomingToast, router]);
 
   return activeCallWithCaller ? <ActiveCallBar call={activeCallWithCaller} /> : null;
 }
