@@ -70,7 +70,7 @@ export function CallManager() {
       incomingToastIdRef.current = null;
     }
     activeIncomingCallIdRef.current = null;
-  }, []);
+  }, [dismissRef]);
 
   const watchCallDoc = useCallback(
     (callId: string) => {
@@ -230,38 +230,6 @@ export function CallManager() {
               openedWindow.location.replace(urlWithToken);
             }
             
-            if (!mobile && openedWindow) {
-              let latestStatus: Call['status'] | null = 'ringing';
-              let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
-              
-              const cleanup = () => {
-                if (unsubStatus) unsubStatus();
-                if (closedCheckInterval) clearInterval(closedCheckInterval);
-              }
-
-              const unsubStatus = onSnapshot(doc(firestore, 'calls', callId), (s) => {
-                latestStatus = s.data()?.status as Call['status'] ?? null;
-                if (latestStatus !== 'ringing') cleanup();
-              });
-              
-              const openedAt = Date.now();
-              const CLOSE_GRACE_MS = 15_000;
-              
-              closedCheckInterval = setInterval(() => {
-                if (latestStatus !== 'ringing') { cleanup(); return; }
-                if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
-
-                let isClosed: boolean | null = null;
-                try { isClosed = openedWindow.closed; } catch { isClosed = null; }
-                
-                if (isClosed === true) {
-                  const endCall = httpsCallable(functions, 'endCall');
-                  endCall({ callId, reason: 'receiver_closed_tab' });
-                  cleanup();
-                }
-              }, 1000);
-            }
-
           } catch (e: any) {
             try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
             pushToast({

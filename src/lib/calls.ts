@@ -87,13 +87,12 @@ export async function startVideoCall(
     const urlWithToken = `${roomUrl}?t=${encodeURIComponent(token)}`;
 
     // Opens in same tab on mobile, in popup tab on desktop
-    const openedWindow = openDaily(urlWithToken, callWindow);
+    openDaily(urlWithToken, callWindow);
 
 
     // --- lifecycle tracking ---
     let unsubscribe: Unsubscribe | null = null;
     let missedTimeout: ReturnType<typeof setTimeout> | null = null;
-    let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
     let latestStatus: Call['status'] | null = null;
 
     const cleanup = () => {
@@ -101,8 +100,6 @@ export async function startVideoCall(
       unsubscribe = null;
       if (missedTimeout) clearTimeout(missedTimeout);
       missedTimeout = null;
-      if (closedCheckInterval) clearInterval(closedCheckInterval);
-      closedCheckInterval = null;
     };
 
     const callDocRef = doc(firestore, 'calls', callId);
@@ -137,26 +134,6 @@ export async function startVideoCall(
     missedTimeout = setTimeout(() => {
       cleanup();
     }, 45_000);
-
-    const mobile = isMobileBrowser();
-    if (!mobile && openedWindow) {
-      const openedAt = Date.now();
-      const CLOSE_GRACE_MS = 15_000;
-
-      closedCheckInterval = setInterval(async () => {
-        if (latestStatus === 'ended') { cleanup(); return; }
-        if (latestStatus !== 'ringing') return;
-        if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
-
-        let isClosed: boolean | null = null;
-        try { isClosed = openedWindow.closed; } catch { isClosed = null; }
-
-        if (isClosed === true) {
-          await endCallClient(app, callId, 'caller_closed_tab');
-          cleanup();
-        }
-      }, 1000);
-    }
 
     return { callId };
   } catch (error) {
