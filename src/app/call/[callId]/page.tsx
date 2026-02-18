@@ -39,6 +39,7 @@ export default function CallPage({ params }: { params: { callId: string } }) {
   const [loading, setLoading] = useState(true);
 
   const dailyWinRef = useRef<Window | null>(null);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const token = useMemo(
     () => sessionStorage.getItem(`dailyToken:${callId}`),
@@ -89,9 +90,20 @@ export default function CallPage({ params }: { params: { callId: string } }) {
   }, [app, callId]);
 
   useEffect(() => {
+    // General cleanup for the redirect timer on component unmount
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!urlWithToken) {
-      const t = setTimeout(() => router.replace('/'), 1500);
-      return () => clearTimeout(t);
+      if (!redirectTimerRef.current) {
+        redirectTimerRef.current = setTimeout(() => router.replace('/'), 1500);
+      }
+      return;
     }
 
     const unsub = onSnapshot(
@@ -101,7 +113,9 @@ export default function CallPage({ params }: { params: { callId: string } }) {
 
         if (!snap.exists()) {
           closeDailyTab();
-          router.replace('/');
+          if (!redirectTimerRef.current) {
+            redirectTimerRef.current = setTimeout(() => router.replace('/'), 800);
+          }
           return;
         }
 
@@ -112,13 +126,16 @@ export default function CallPage({ params }: { params: { callId: string } }) {
           closeDailyTab();
           sessionStorage.removeItem(`dailyToken:${callId}`);
           sessionStorage.removeItem(`dailyRoomUrl:${callId}`);
-          const t = setTimeout(() => router.replace('/'), 2000);
-          return () => clearTimeout(t);
+          
+          if (!redirectTimerRef.current) {
+            redirectTimerRef.current = setTimeout(() => router.replace('/'), 800);
+          }
         }
       },
       (err) => {
         console.error('Call doc listener error:', err);
         setLoading(false);
+        // This is an error case, a quick redirect is fine.
         router.replace('/');
       }
     );
