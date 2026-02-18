@@ -40,6 +40,11 @@ export function CallManager() {
   const app = useFirebaseApp();
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
+  const busyCallIdRef = useRef<string | null>(null);
+  
+  useEffect(() => {
+    busyCallIdRef.current = busyCallId;
+  }, [busyCallId]);
 
   // --- Safe dismiss handling ---
   const { dismiss } = useToast();
@@ -161,7 +166,7 @@ export function CallManager() {
         const callDoc = change.doc;
         const callId = callDoc.id;
         
-        if (activeIncomingCallIdRef.current === callId) continue;
+        if (activeIncomingCallIdRef.current === callId && incomingToastIdRef.current) continue;
         
         const call = callDoc.data();
         const callerName = (call?.callerName as string) || 'Someone';
@@ -170,8 +175,10 @@ export function CallManager() {
         hideIncomingToast();
 
         const accept = async () => {
-          if (busyCallId) return;
+          if (busyCallIdRef.current) return;
+          busyCallIdRef.current = callId;
           setBusyCallId(callId);
+
           hideIncomingToast();
 
           const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -183,6 +190,7 @@ export function CallManager() {
               title: 'Popup Blocked',
               description: 'Please allow popups and try again.',
             });
+            busyCallIdRef.current = null;
             setBusyCallId(null);
             return;
           }
@@ -231,7 +239,7 @@ export function CallManager() {
                 if (closedCheckInterval) clearInterval(closedCheckInterval);
               }
 
-              const unsubStatus = onSnapshot(callDocRef, (s) => {
+              const unsubStatus = onSnapshot(doc(firestore, 'calls', callId), (s) => {
                 latestStatus = s.data()?.status as Call['status'] ?? null;
                 if (latestStatus !== 'ringing') cleanup();
               });
@@ -262,13 +270,16 @@ export function CallManager() {
               description: e.message || 'Could not accept the call.',
             });
           } finally {
+            busyCallIdRef.current = null;
             setBusyCallId(null);
           }
         };
 
         const decline = async () => {
-          if (busyCallId) return;
+          if (busyCallIdRef.current) return;
+          busyCallIdRef.current = callId;
           setBusyCallId(callId);
+
           hideIncomingToast();
 
           try {
@@ -282,6 +293,7 @@ export function CallManager() {
               description: e?.message || 'Could not decline the call.',
             });
           } finally {
+            busyCallIdRef.current = null;
             setBusyCallId(null);
           }
         };
@@ -292,8 +304,8 @@ export function CallManager() {
           duration: Infinity,
           action: (
             <div className="flex gap-2">
-              <Button size="sm" onClick={accept} disabled={!!busyCallId}>Accept</Button>
-              <Button size="sm" variant="outline" onClick={decline} disabled={!!busyCallId}>Decline</Button>
+              <Button size="sm" onClick={accept} disabled={!!busyCallIdRef.current}>Accept</Button>
+              <Button size="sm" variant="outline" onClick={decline} disabled={!!busyCallIdRef.current}>Decline</Button>
             </div>
           ),
         });
@@ -307,7 +319,7 @@ export function CallManager() {
     });
 
     return () => unsub();
-  }, [user?.uid, firestore, app, busyCallId, watchCallDoc, hideIncomingToast]);
+  }, [user?.uid, firestore, app, watchCallDoc, hideIncomingToast]);
 
   return activeCallWithCaller ? <ActiveCallBar call={activeCallWithCaller} /> : null;
 }
