@@ -21,19 +21,18 @@ function openDaily(urlWithToken: string, callWindow?: Window | null) {
 
   if (mobile) {
     // Mobile Chrome/Safari: safest, no popups
-    window.location.assign(urlWithToken);
+    window.location.replace(urlWithToken);
     return null;
   }
 
   const w = callWindow ?? window.open('about:blank', '_blank');
   if (!w) return null;
 
-  try {
-    w.opener = null;
-  } catch {}
+  try { w.opener = null; } catch {}
   w.location.replace(urlWithToken);
   return w;
 }
+
 
 type StartCallResult = {
   callId: string;
@@ -87,6 +86,7 @@ export async function startVideoCall(
 
     // Opens in same tab on mobile, in popup tab on desktop
     const openedWindow = openDaily(urlWithToken, callWindow);
+
 
     // --- lifecycle tracking ---
     let unsubscribe: Unsubscribe | null = null;
