@@ -25,14 +25,15 @@ function openDaily(urlWithToken: string, callWindow?: Window | null) {
     return null;
   }
 
-  const w = callWindow ?? window.open('about:blank', '_blank', 'noopener,noreferrer');
+  const w = callWindow ?? window.open('about:blank', '_blank');
   if (!w) return null;
 
-  try { w.opener = null; } catch {}
-  w.location.href = urlWithToken;
+  try {
+    w.opener = null;
+  } catch {}
+  w.location.replace(urlWithToken);
   return w;
 }
-
 
 type StartCallResult = {
   callId: string;
@@ -75,7 +76,9 @@ export async function startVideoCall(
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      if (callWindow && !callWindow.closed) callWindow.close();
+      try {
+        if (callWindow && !callWindow.closed) callWindow.close();
+      } catch {}
       throw new Error('startCall did not return callId/token/roomUrl');
     }
 
@@ -84,7 +87,6 @@ export async function startVideoCall(
 
     // Opens in same tab on mobile, in popup tab on desktop
     const openedWindow = openDaily(urlWithToken, callWindow);
-
 
     // --- lifecycle tracking ---
     let unsubscribe: Unsubscribe | null = null;

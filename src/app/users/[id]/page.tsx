@@ -41,24 +41,22 @@ export default function UserProfilePage() {
     }
     if (isCalling) return;
 
-    setIsCalling(true);
-    toast({
-      title: 'Starting call...',
-      description: `Calling ${userProfile.name}.`,
-    });
-
     const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-    const callWindow = mobile ? null : window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const callWindow = mobile ? null : window.open('about:blank', '_blank');
     if (!mobile && !callWindow) {
       toast({
         variant: 'destructive',
         title: 'Popup Blocked',
         description: 'Please allow pop-ups for this site to place a call.',
       });
-      setIsCalling(false);
       return;
     }
+
+    setIsCalling(true);
+    toast({
+      title: 'Starting call...',
+      description: `Calling ${userProfile.name}.`,
+    });
 
     try {
       await startVideoCall(app, userProfile.id, callWindow);

@@ -128,7 +128,7 @@ export function CallManager() {
 
     const accept = async () => {
       const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-      const callWindow = mobile ? null : window.open('about:blank', '_blank', 'noopener,noreferrer');
+      const callWindow = mobile ? null : window.open('about:blank', '_blank');
 
       if (!mobile && !callWindow) {
         toast({
@@ -138,8 +138,10 @@ export function CallManager() {
         });
         return;
       }
-    
-      try { if (callWindow) callWindow.opener = null; } catch {}
+
+      try {
+        if (callWindow) callWindow.opener = null;
+      } catch {}
 
       setBusyCallId(callId);
 
@@ -155,7 +157,9 @@ export function CallManager() {
             title: 'Call no longer available',
             description: 'This call has already ended.',
           });
-          try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
+          try {
+            if (callWindow && !callWindow.closed) callWindow.close();
+          } catch {}
           return;
         }
 
@@ -167,7 +171,9 @@ export function CallManager() {
         const data = res.data;
 
         if (!data?.token || !data?.roomUrl) {
-          try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
+          try {
+            if (callWindow && !callWindow.closed) callWindow.close();
+          } catch {}
           throw new Error('acceptCall did not return token/roomUrl');
         }
 
@@ -175,19 +181,17 @@ export function CallManager() {
           data.token
         )}`;
 
-        const openedWindow = (mobile ? null : callWindow);
+        const openedWindow = mobile ? null : callWindow;
 
         // mobile: same-tab redirect
         if (mobile) {
-            window.location.assign(urlWithToken);
+          window.location.assign(urlWithToken);
         } else if (openedWindow) {
-            openedWindow.location.href = urlWithToken;
+          openedWindow.location.replace(urlWithToken);
         }
 
-
         let unsubscribe: Unsubscribe | null = null;
-        let closedCheckInterval: ReturnType<typeof setInterval> | null =
-          null;
+        let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
         let latestStatus: Call['status'] | null = null;
 
         const cleanup = () => {
@@ -218,7 +222,7 @@ export function CallManager() {
             cleanup();
           }
         );
-        
+
         if (!mobile && openedWindow) {
           const openedAt = Date.now();
           const CLOSE_GRACE_MS = 6000;
@@ -237,9 +241,10 @@ export function CallManager() {
             }
           }, 1000);
         }
-
       } catch (e: any) {
-        try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
+        try {
+          if (callWindow && !callWindow.closed) callWindow.close();
+        } catch {}
         toast({
           variant: 'destructive',
           title: 'Accept failed',
