@@ -1,40 +1,7 @@
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import {
-  getFirestore,
-  doc,
-  onSnapshot,
-  Unsubscribe,
-  getDoc,
-} from 'firebase/firestore';
 import type { FirebaseApp } from 'firebase/app';
-import type { Call } from '@/lib/types';
-
-function isMobileBrowser() {
-  if (typeof navigator === 'undefined') return false;
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function openDaily(urlWithToken: string, callWindow?: Window | null) {
-  const mobile = isMobileBrowser();
-
-  if (mobile) {
-    // Mobile Chrome/Safari: safest, no popups
-    window.location.replace(urlWithToken);
-    return null;
-  }
-
-  const w = callWindow ?? window.open('about:blank', '_blank');
-  if (!w) return null;
-
-  try {
-    w.opener = null;
-  } catch {}
-  w.location.replace(urlWithToken);
-  return w;
-}
-
 
 type StartCallResult = {
   callId: string;
@@ -46,7 +13,11 @@ type StartCallResult = {
 
 type EndCallResult = { ok: true; alreadyEnded?: true };
 
-async function endCallClient(app: FirebaseApp, callId: string, reason: string) {
+export async function endCallClient(
+  app: FirebaseApp,
+  callId: string,
+  reason: string
+) {
   try {
     const functions = getFunctions(app, 'us-central1');
     const endCall = httpsCallable<
@@ -84,10 +55,8 @@ export async function startVideoCall(
     sessionStorage.setItem(`dailyToken:${callId}`, token);
     sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 
-    // Lifecycle tracking is removed from here
     return { callId };
   } catch (error) {
-    // No window to close here anymore
     throw error;
   }
 }
