@@ -38,7 +38,7 @@ export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
   const app = useFirebaseApp();
-  const { toast, dismiss } = useToast();
+  const { toast } = useToast();
 
   const initializedRef = useRef(false);
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
@@ -109,7 +109,8 @@ export function CallManager() {
       activeCallUnsub.current = null;
     }
     if (incomingToastIdRef.current) {
-      dismiss(incomingToastIdRef.current);
+      // @ts-ignore
+      toast.dismiss(incomingToastIdRef.current);
       incomingToastIdRef.current = null;
     }
   };
@@ -322,7 +323,7 @@ export function CallManager() {
       unsub();
       hideIncomingToast(); // Also cleanup on main unmount/re-run
     };
-  }, [user?.uid, firestore, app, busyCallId, toast, dismiss]);
+  }, [user?.uid, firestore, app, busyCallId, toast]);
 
   return activeCallWithCaller ? (
     <ActiveCallBar call={activeCallWithCaller} />
