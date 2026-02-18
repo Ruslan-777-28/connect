@@ -22,6 +22,7 @@ export type Call = {
   updatedAt: Timestamp;
   acceptedAt?: Timestamp | null;
   endedAt?: Timestamp | null;
+  expiresAt?: Timestamp;
   caller?: UserProfile;
   callerActingAs?: 'client' | 'pro';
   receiverActingAs?: 'client' | 'pro';

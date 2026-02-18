@@ -1,4 +1,5 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -136,7 +137,9 @@ exports.startCall = onCall(
 
     // 3) write to calls/{callId}
     const callRef = admin.firestore().collection("calls").doc();
-    const now = admin.firestore.FieldValue.serverTimestamp();
+    const nowTs = admin.firestore.Timestamp.now();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45_000);
+
 
     await callRef.set({
       status: "ringing",               // ringing -> accepted -> ended
@@ -146,8 +149,10 @@ exports.startCall = onCall(
       receiverActingAs: "pro",
       roomName,
       roomUrl,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      // NEW: server lifecycle deadline
+      expiresAt,
     });
 
     return {
@@ -257,5 +262,43 @@ exports.endCall = onCall(
     });
 
     return result;
+  }
+);
+
+/**
+ * cleanupMissedCalls (scheduled)
+ * Every minute: end calls stuck in "ringing" past expiresAt.
+ */
+exports.cleanupMissedCalls = onSchedule(
+  { region: "us-central1", schedule: "every 1 minutes" },
+  async () => {
+    const db = admin.firestore();
+    const now = admin.firestore.Timestamp.now();
+
+    const snap = await db
+      .collection("calls")
+      .where("status", "==", "ringing")
+      .where("expiresAt", "<=", now)
+      .limit(400)
+      .get();
+
+    if (snap.empty) {
+      logger.log("No missed calls to clean up.");
+      return;
+    }
+
+    logger.log(`Cleaning up ${snap.size} missed calls.`);
+    const batch = db.batch();
+    for (const doc of snap.docs) {
+      batch.update(doc.ref, {
+        status: "ended",
+        endReason: "missed",
+        endedBy: "system",
+        endedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
   }
 );

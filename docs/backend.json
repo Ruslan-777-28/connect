@@ -92,6 +92,11 @@
           "type": "string",
           "format": "date-time"
         },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the ringing call expires and should be considered missed."
+        },
         "callerActingAs": {
             "type": "string",
             "enum": ["client", "pro"]
