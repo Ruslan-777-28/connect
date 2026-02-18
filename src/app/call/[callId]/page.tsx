@@ -73,7 +73,7 @@ export default function CallPage() {
       return;
     }
 
-    const w = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const w = window.open(urlWithToken, '_blank');
     if (!w) {
       alert('Please allow pop-ups to open the video call.');
       return;
@@ -82,7 +82,6 @@ export default function CallPage() {
     try {
       w.opener = null;
     } catch {}
-    w.location.replace(urlWithToken);
     dailyWinRef.current = w;
   }, [urlWithToken]);
 
