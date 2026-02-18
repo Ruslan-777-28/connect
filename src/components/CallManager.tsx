@@ -41,8 +41,12 @@ export function CallManager() {
   const { toast } = useToast();
 
   const initializedRef = useRef(false);
-  const shownCallIdsRef = useRef<Set<string>>(new Set());
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
+
+  // --- New Toast Lifecycle ---
+  const incomingToastIdRef = useRef<string | null>(null);
+  const activeCallUnsub = useRef<Unsubscribe | null>(null);
+
 
   // --- Listen for ACTIVE calls (for both participants) ---
   const [activeCall, setActiveCall] = useState<Call | null>(null);
@@ -99,6 +103,18 @@ export function CallManager() {
     [activeCall, callerProfile]
   );
 
+  const hideIncomingToast = () => {
+    if (activeCallUnsub.current) {
+      activeCallUnsub.current();
+      activeCallUnsub.current = null;
+    }
+    if (incomingToastIdRef.current) {
+      toast.dismiss(incomingToastIdRef.current);
+      incomingToastIdRef.current = null;
+    }
+  };
+
+
   // --- Effect for showing INCOMING call toasts ---
   useEffect(() => {
     if (!user?.uid || !firestore) {
@@ -123,24 +139,26 @@ export function CallManager() {
         }
 
         for (const change of snap.docChanges()) {
-          if (change.type !== 'added') continue;
+          if (change.type !== 'added' || incomingToastIdRef.current) continue;
 
           const callDoc = change.doc;
           const callId = callDoc.id;
-
-          if (shownCallIdsRef.current.has(callId)) continue;
-          shownCallIdsRef.current.add(callId);
-
           const call = callDoc.data();
           const callerName = (call?.callerName as string) || 'Someone';
 
+          // Watch this specific call to hide toast when status changes
+          activeCallUnsub.current = onSnapshot(doc(firestore, 'calls', callId), (docSnap) => {
+            if (!docSnap.exists() || docSnap.data()?.status !== 'ringing') {
+              hideIncomingToast();
+            }
+          });
+
           const accept = async () => {
-            const mobile = /Android|iPhone|iPad|iPod/i.test(
-              navigator.userAgent
-            );
-            const callWindow = mobile
-              ? null
-              : window.open('about:blank', '_blank');
+            if (busyCallId) return;
+            setBusyCallId(callId);
+
+            const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+            const callWindow = mobile ? null : window.open('about:blank', '_blank');
 
             if (!mobile && !callWindow) {
               toast({
@@ -148,14 +166,11 @@ export function CallManager() {
                 title: 'Popup Blocked',
                 description: 'Please allow popups and try again.',
               });
+              setBusyCallId(null);
+              hideIncomingToast(); // Explicitly hide on this failure
               return;
             }
-
-            try {
-              if (callWindow) callWindow.opener = null;
-            } catch {}
-
-            setBusyCallId(callId);
+            try { if (callWindow) callWindow.opener = null; } catch {}
 
             try {
               const functions = getFunctions(app, 'us-central1');
@@ -169,9 +184,8 @@ export function CallManager() {
                   title: 'Call no longer available',
                   description: 'This call has already ended.',
                 });
-                try {
-                  if (callWindow && !callWindow.closed) callWindow.close();
-                } catch {}
+                try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
+                // The single-doc listener will handle hiding the toast.
                 return;
               }
 
@@ -183,89 +197,71 @@ export function CallManager() {
               const data = res.data;
 
               if (!data?.token || !data?.roomUrl) {
-                try {
-                  if (callWindow && !callWindow.closed) callWindow.close();
-                } catch {}
+                try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
                 throw new Error('acceptCall did not return token/roomUrl');
               }
 
-              const urlWithToken = `${
-                data.roomUrl
-              }?t=${encodeURIComponent(data.token)}`;
-
-              const openedWindow = mobile ? null : callWindow;
-
+              const urlWithToken = `${data.roomUrl}?t=${encodeURIComponent(data.token)}`;
               if (mobile) {
                 window.location.replace(urlWithToken);
-              } else if (openedWindow) {
-                openedWindow.location.replace(urlWithToken);
+              } else if (callWindow) {
+                callWindow.location.replace(urlWithToken);
               }
 
-              let unsubscribe: Unsubscribe | null = null;
-              let closedCheckInterval: ReturnType<
-                typeof setInterval
-              > | null = null;
-              let latestStatus: Call['status'] | null = null;
-
-              const cleanup = () => {
-                if (unsubscribe) {
-                  unsubscribe();
-                  unsubscribe = null;
+              // On success, the single-doc listener will hide the toast.
+              
+              if (!mobile && callWindow) {
+                let latestStatus: Call['status'] | null = 'ringing';
+                let closedCheckInterval: ReturnType<typeof setInterval> | null = null;
+                
+                const cleanup = () => {
+                  if (unsubStatus) unsubStatus();
+                  if (closedCheckInterval) clearInterval(closedCheckInterval);
                 }
-                if (closedCheckInterval) {
-                  clearInterval(closedCheckInterval);
-                  closedCheckInterval = null;
-                }
-              };
 
-              unsubscribe = onSnapshot(
-                callDocRef,
-                (snapshot) => {
-                  const callData = snapshot.data() as Call | undefined;
-                  latestStatus = (callData?.status as any) ?? null;
-                  if (latestStatus === 'ended') cleanup();
-                },
-                (err) => {
-                  console.error('onSnapshot error:', err);
-                  cleanup();
-                }
-              );
-
-              if (!mobile && openedWindow) {
+                const unsubStatus = onSnapshot(callDocRef, (s) => {
+                  latestStatus = s.data()?.status as Call['status'] ?? null;
+                  if (latestStatus !== 'ringing') {
+                    cleanup();
+                  }
+                });
+                
                 const openedAt = Date.now();
                 const CLOSE_GRACE_MS = 15_000;
-
+                
                 closedCheckInterval = setInterval(() => {
-                  if (latestStatus === 'ended') { cleanup(); return; }
-                  if (latestStatus !== 'ringing') return;
+                  if (latestStatus !== 'ringing') {
+                    cleanup();
+                    return;
+                  }
                   if (Date.now() - openedAt < CLOSE_GRACE_MS) return;
 
-                  let isClosed: boolean | null = null;
-                  try { isClosed = openedWindow.closed; } catch { isClosed = null; }
-
-                  if (isClosed === true) {
+                  let isClosed = false;
+                  try { isClosed = callWindow.closed } catch { isClosed = false }
+                  
+                  if(isClosed) {
                     const endCall = httpsCallable(functions, 'endCall');
                     endCall({ callId, reason: 'receiver_closed_tab' });
                     cleanup();
                   }
                 }, 1000);
               }
+
             } catch (e: any) {
-              try {
-                if (callWindow && !callWindow.closed) callWindow.close();
-              } catch {}
+              try { if (callWindow && !callWindow.closed) callWindow.close(); } catch {}
               toast({
                 variant: 'destructive',
                 title: 'Accept failed',
                 description: e.message || 'Could not accept the call.',
               });
-              shownCallIdsRef.current.delete(callId);
+              hideIncomingToast();
             } finally {
               setBusyCallId(null);
             }
           };
 
           const decline = async () => {
+            if (busyCallId) return;
             setBusyCallId(callId);
             try {
               const functions = getFunctions(app, 'us-central1');
@@ -273,35 +269,30 @@ export function CallManager() {
                 { callId: string; reason: string },
                 EndCallResult
               >(functions, 'endCall');
-
               await endCall({ callId, reason: 'declined' });
-
-              toast({
-                title: 'Call declined',
-                description: `You declined the call from ${callerName}.`,
-              });
+              // The single-doc listener will handle hiding the toast on success.
             } catch (e: any) {
               toast({
                 variant: 'destructive',
                 title: 'Decline failed',
                 description: e?.message || 'Could not decline the call.',
               });
-              shownCallIdsRef.current.delete(callId);
+              hideIncomingToast(); // Hide on error
             } finally {
               setBusyCallId(null);
             }
           };
 
-          toast({
+          const { id: toastId } = toast({
             title: 'Incoming call',
             description: `${callerName} is calling you.`,
-            duration: 60_000,
+            duration: Infinity, // Important: toast must be controlled manually
             action: (
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   onClick={accept}
-                  disabled={busyCallId === callId}
+                  disabled={!!busyCallId}
                 >
                   Accept
                 </Button>
@@ -309,13 +300,14 @@ export function CallManager() {
                   size="sm"
                   variant="outline"
                   onClick={decline}
-                  disabled={busyCallId === callId}
+                  disabled={!!busyCallId}
                 >
                   Decline
                 </Button>
               </div>
             ),
           });
+          incomingToastIdRef.current = toastId;
         }
       },
       (err) => {
@@ -323,8 +315,11 @@ export function CallManager() {
       }
     );
 
-    return () => unsub();
-  }, [user?.uid, firestore, app, toast, busyCallId]);
+    return () => {
+      unsub();
+      hideIncomingToast(); // Also cleanup on main unmount/re-run
+    };
+  }, [user?.uid, firestore, app, busyCallId, toast]);
 
   return activeCallWithCaller ? (
     <ActiveCallBar call={activeCallWithCaller} />
