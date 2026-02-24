@@ -15,19 +15,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Loader2, PhoneOff, Video } from 'lucide-react';
+import { Loader2, PhoneOff, LogIn } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-
-function isMobileBrowser() {
-  if (typeof navigator === 'undefined') return false;
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
-
-function buildDailyUrl(roomUrl: string, token: string) {
-  const url = new URL(roomUrl);
-  url.searchParams.set('t', token);
-  return url.toString();
-}
 
 export default function CallPage() {
   const params = useParams<{ callId: string }>();
@@ -38,52 +27,16 @@ export default function CallPage() {
 
   const [callData, setCallData] = useState<Call | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const dailyWinRef = useRef<Window | null>(null);
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const token = useMemo(
-    () => sessionStorage.getItem(`dailyToken:${callId}`),
-    [callId]
-  );
-  const roomUrl = useMemo(
-    () => sessionStorage.getItem(`dailyRoomUrl:${callId}`),
+  const tokenExists = useMemo(
+    () => !!sessionStorage.getItem(`dailyToken:${callId}`),
     [callId]
   );
 
-  const urlWithToken = useMemo(() => {
-    if (!token || !roomUrl) return null;
-    return buildDailyUrl(roomUrl, token);
-  }, [token, roomUrl]);
-
-  const closeDailyTab = useCallback(() => {
-    try {
-      if (dailyWinRef.current && !dailyWinRef.current.closed) {
-        dailyWinRef.current.close();
-      }
-    } catch {}
-    dailyWinRef.current = null;
-  }, []);
-
-  const openDaily = useCallback(() => {
-    if (!urlWithToken) return;
-
-    if (isMobileBrowser()) {
-      window.location.replace(urlWithToken);
-      return;
-    }
-
-    const w = window.open(urlWithToken, '_blank');
-    if (!w) {
-      alert('Please allow pop-ups to open the video call.');
-      return;
-    }
-
-    try {
-      w.opener = null;
-    } catch {}
-    dailyWinRef.current = w;
-  }, [urlWithToken]);
+  const handleJoinRoom = useCallback(() => {
+    router.push(`/call/${callId}/room`);
+  }, [router, callId]);
 
   const handleEnd = useCallback(async () => {
     await endCallClient(app, callId, 'ended');
@@ -99,7 +52,7 @@ export default function CallPage() {
   }, []);
 
   useEffect(() => {
-    if (!urlWithToken) {
+    if (!tokenExists) {
       if (!redirectTimerRef.current) {
         redirectTimerRef.current = setTimeout(() => router.replace('/'), 1500);
       }
@@ -112,7 +65,6 @@ export default function CallPage() {
         setLoading(false);
 
         if (!snap.exists()) {
-          closeDailyTab();
           if (!redirectTimerRef.current) {
             redirectTimerRef.current = setTimeout(() => router.replace('/'), 800);
           }
@@ -123,7 +75,6 @@ export default function CallPage() {
         setCallData(data);
 
         if (data.status === 'ended') {
-          closeDailyTab();
           sessionStorage.removeItem(`dailyToken:${callId}`);
           sessionStorage.removeItem(`dailyRoomUrl:${callId}`);
           
@@ -141,7 +92,7 @@ export default function CallPage() {
     );
 
     return () => unsub();
-  }, [callId, closeDailyTab, firestore, router, urlWithToken]);
+  }, [callId, firestore, router, tokenExists]);
 
   const status = callData?.status || 'loading';
 
@@ -162,9 +113,9 @@ export default function CallPage() {
     <div className="flex min-h-screen w-full items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle>Call Controller</CardTitle>
+          <CardTitle>Call Lobby</CardTitle>
           <CardDescription>
-            Manage your video call session from here.
+            You are about to join a video call.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center gap-4">
@@ -180,12 +131,12 @@ export default function CallPage() {
           </div>
           <div className="flex w-full gap-3">
             <Button
-              onClick={openDaily}
-              disabled={!urlWithToken || status === 'ended'}
+              onClick={handleJoinRoom}
+              disabled={!tokenExists || status === 'ended' || status === 'ringing'}
               className="flex-1"
             >
-              <Video className="mr-2" />
-              Open Video
+              <LogIn className="mr-2" />
+              Join Room
             </Button>
             <Button
               variant="destructive"
@@ -197,10 +148,13 @@ export default function CallPage() {
               End Call
             </Button>
           </div>
+          {status === 'ringing' && (
+            <p className="text-sm text-muted-foreground">Waiting for the other user to accept...</p>
+          )}
         </CardContent>
         <CardFooter>
           <p className="w-full text-center text-xs text-muted-foreground">
-            Use this page to open and end your video call.
+            Once you join, the video will be embedded on the next page.
           </p>
         </CardFooter>
       </Card>
