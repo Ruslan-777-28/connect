@@ -320,6 +320,11 @@ exports.cleanupMissedCalls = onSchedule(
 exports.dailyWebhook = onRequest(
   { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
   async (req, res) => {
+    // TEMP: allow Daily verification ping (no signature) for 10 minutes
+    if (!req.get("X-Webhook-Signature") || !req.get("X-Webhook-Timestamp")) {
+      return res.status(200).send("ok");
+    }
+
     const signature = req.headers["x-webhook-signature"];
     const timestamp = req.headers["x-webhook-timestamp"];
     const secret = DAILY_WEBHOOK_HMAC.value();
