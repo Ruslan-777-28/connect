@@ -10,6 +10,45 @@ admin.initializeApp();
 const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 const DAILY_WEBHOOK_HMAC = defineSecret("DAILY_WEBHOOK_HMAC");
 
+function timingSafeEqualStr(a, b) {
+  try {
+    const ab = Buffer.from(a);
+    const bb = Buffer.from(b);
+    if (ab.length !== bb.length) return false;
+    return crypto.timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+
+function verifyDailyWebhook(req, secretB64) {
+  const sig = String(req.get("X-Webhook-Signature") || "");
+  const ts = String(req.get("X-Webhook-Timestamp") || "");
+  if (!sig || !ts) {
+    logger.warn("Daily webhook: missing signature or timestamp headers.");
+    return false;
+  }
+
+  if (!secretB64) {
+    logger.error("Daily webhook: HMAC secret is not configured.");
+    return false;
+  }
+
+  const secret = Buffer.from(secretB64, "base64");
+  const raw = req.rawBody; // MUST be raw body
+
+  if (!raw) {
+    logger.warn("Daily webhook: request rawBody is missing.");
+    return false;
+  }
+
+  const msg = Buffer.concat([Buffer.from(ts + "."), raw]);
+  const digest = crypto.createHmac("sha256", secret).update(msg).digest("base64");
+
+  return timingSafeEqualStr(digest, sig);
+}
+
+
 function requireAuth(request) {
   if (!request.auth || !request.auth.uid) {
     throw new HttpsError("unauthenticated", "Auth required");
@@ -258,7 +297,6 @@ exports.endCall = onCall(
         throw new HttpsError("permission-denied", "Not a call participant");
       }
 
-      // ✅ Ідемпотентність: якщо вже ended — просто повертаємо ok
       if (call.status === "ended") {
         return { ok: true, alreadyEnded: true };
       }
@@ -316,6 +354,104 @@ exports.cleanupMissedCalls = onSchedule(
   }
 );
 
-exports.dailyWebhook = onRequest({ region: "us-central1" }, (req, res) => {
-  return res.status(200).send("ok");
-});
+exports.dailyWebhook = onRequest(
+  { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
+  async (req, res) => {
+    // 1. Verify signature
+    const hmacSecret = DAILY_WEBHOOK_HMAC.value();
+    if (!verifyDailyWebhook(req, hmacSecret)) {
+      logger.warn("Daily webhook: invalid signature.");
+      return res.status(401).send("Invalid signature");
+    }
+
+    // 2. Respond immediately to avoid Daily retries
+    res.status(200).send("ok");
+
+    // 3. Process event asynchronously
+    try {
+      const { event } = req.body;
+      if (!event || !event.id || !event.type || !event.payload?.payload?.room) {
+        logger.log("Daily webhook: received incomplete event.", { body: req.body });
+        return;
+      }
+      
+      const eventId = event.id;
+      const eventType = event.type;
+      const roomName = event.payload.payload.room;
+      const userId = event.payload.payload.user_id;
+
+      // Find callId from roomName
+      const roomDocSnap = await admin.firestore().doc(`dailyRooms/${roomName}`).get();
+      if (!roomDocSnap.exists) {
+        logger.log(`Daily webhook: room doc not found for roomName: ${roomName}.`);
+        return;
+      }
+      const callId = roomDocSnap.data()?.callId;
+      if (!callId) {
+        logger.error(`Daily webhook: callId missing in room doc for roomName: ${roomName}.`);
+        return;
+      }
+
+      const callRef = admin.firestore().doc(`calls/${callId}`);
+      const eventRef = callRef.collection("webhookEvents").doc(eventId);
+
+      // Run as transaction for idempotency and atomic updates
+      await admin.firestore().runTransaction(async (tx) => {
+        const eventSnap = await tx.get(eventRef);
+        if (eventSnap.exists) {
+          logger.log(`Daily webhook: event ${eventId} already processed.`);
+          return; // Idempotent: already processed
+        }
+
+        const callSnap = await tx.get(callRef);
+        if (!callSnap.exists) {
+          logger.log(`Daily webhook: call doc ${callId} not found during transaction.`);
+          return;
+        }
+
+        const call = callSnap.data();
+        // Only process events for 'accepted' calls
+        if (call.status !== "accepted") {
+          logger.log(`Daily webhook: skipping event for call ${callId} with status ${call.status}.`);
+          tx.set(eventRef, { type: eventType, processedAt: admin.firestore.FieldValue.serverTimestamp() });
+          return;
+        }
+        
+        let updateData = {};
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        
+        if (eventType === "participant-joined" && userId) {
+           updateData = {
+               [`participants.${userId}`]: { joinedAt: now },
+               activeCount: admin.firestore.FieldValue.increment(1),
+               lastPresenceAt: now,
+           };
+        } else if (eventType === "participant-left" && userId) {
+            const newActiveCount = (call.activeCount || 1) - 1;
+            updateData = {
+                [`participants.${userId}`]: admin.firestore.FieldValue.delete(),
+                activeCount: admin.firestore.FieldValue.increment(-1),
+                lastPresenceAt: now,
+            };
+
+            if (newActiveCount <= 0) {
+                updateData.status = "ended";
+                updateData.endReason = "left";
+                updateData.endedBy = "system";
+                updateData.endedAt = now;
+            }
+        }
+        
+        if (Object.keys(updateData).length > 0) {
+            tx.update(callRef, { ...updateData, updatedAt: now });
+        }
+
+        // Mark event as processed
+        tx.set(eventRef, { type: eventType, userId, processedAt: now });
+      });
+
+    } catch (error) {
+      logger.error("Daily webhook: error processing event.", { error, body: req.body });
+    }
+  }
+);
