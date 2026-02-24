@@ -106,14 +106,22 @@ export default function CallRoomPage() {
   // 2) Монтуємо Daily embedded
   useEffect(() => {
     if (!urlWithToken) {
-      // немає токена — зайшли напряму або токен вже очищено
       hardExitToHome();
       return;
     }
     if (!containerRef.current) return;
-    if (callRef.current) return;
-
-    // створюємо call frame
+  
+    // hard cleanup: знести будь-який “залиплий” інстанс (StrictMode/Fast Refresh)
+    try {
+      const existing = DailyIframe.getCallInstance?.();
+      existing?.destroy?.();
+    } catch {}
+  
+    if (callRef.current) {
+      try { callRef.current.destroy(); } catch {}
+      callRef.current = null;
+    }
+  
     const call = DailyIframe.createFrame(containerRef.current, {
       iframeStyle: {
         width: '100%',
@@ -121,31 +129,24 @@ export default function CallRoomPage() {
         border: '0',
         borderRadius: '16px',
       },
-      // прибираємо стандартні кнопки, щоб керування було твоє
       showLeaveButton: false,
       showFullscreenButton: true,
     });
-
+  
     callRef.current = call;
-
-    // join
     call.join({ url: urlWithToken });
-
-    // якщо юзер якось вийшов (напр. закрив вкладку/бек) — просто виходимо в app
+  
     call.on('left-meeting', () => {
-      // не авто-end (поки без webhooks), просто повертаємось
-      destroyDaily();
+      try { call.destroy(); } catch {}
+      callRef.current = null;
       hardExitToHome();
     });
-
+  
     return () => {
-      // cleanup при розмонтуванні
-      try {
-        call.destroy();
-      } catch {}
+      try { call.destroy(); } catch {}
       callRef.current = null;
     };
-  }, [destroyDaily, hardExitToHome, urlWithToken]);
+  }, [hardExitToHome, urlWithToken]);
 
   return (
     <div className="flex min-h-screen w-full flex-col">
