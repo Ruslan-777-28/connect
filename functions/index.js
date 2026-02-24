@@ -11,43 +11,26 @@ const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 const DAILY_WEBHOOK_HMAC = defineSecret("DAILY_WEBHOOK_HMAC");
 
 function timingSafeEqualStr(a, b) {
-  try {
-    const ab = Buffer.from(a);
-    const bb = Buffer.from(b);
-    if (ab.length !== bb.length) return false;
-    return crypto.timingSafeEqual(ab, bb);
-  } catch {
-    return false;
-  }
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
 }
 
 function verifyDailyWebhook(req, secretB64) {
   const sig = String(req.get("X-Webhook-Signature") || "");
   const ts = String(req.get("X-Webhook-Timestamp") || "");
-  if (!sig || !ts) {
-    logger.warn("Daily webhook: missing signature or timestamp headers.");
-    return false;
-  }
-
-  if (!secretB64) {
-    logger.error("Daily webhook: HMAC secret is not configured.");
-    return false;
-  }
+  if (!sig || !ts) return false;
 
   const secret = Buffer.from(secretB64, "base64");
-  const raw = req.rawBody; // MUST be raw body
+  const raw = req.rawBody; // критично
 
-  if (!raw) {
-    logger.warn("Daily webhook: request rawBody is missing.");
-    return false;
-  }
-
+  // message = "{timestamp}.{rawBody}"
   const msg = Buffer.concat([Buffer.from(ts + "."), raw]);
   const digest = crypto.createHmac("sha256", secret).update(msg).digest("base64");
 
   return timingSafeEqualStr(digest, sig);
 }
-
 
 function requireAuth(request) {
   if (!request.auth || !request.auth.uid) {
@@ -357,101 +340,107 @@ exports.cleanupMissedCalls = onSchedule(
 exports.dailyWebhook = onRequest(
   { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
   async (req, res) => {
-    // 1. Verify signature
-    const hmacSecret = DAILY_WEBHOOK_HMAC.value();
-    if (!verifyDailyWebhook(req, hmacSecret)) {
-      logger.warn("Daily webhook: invalid signature.");
+    // Daily webhooks приходять POST
+    if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+
+    const secretB64 = DAILY_WEBHOOK_HMAC.value();
+
+    // strict verify
+    if (!verifyDailyWebhook(req, secretB64)) {
       return res.status(401).send("Invalid signature");
     }
 
-    // 2. Respond immediately to avoid Daily retries
+    // відповідаємо швидко (Daily любить швидко)
     res.status(200).send("ok");
 
-    // 3. Process event asynchronously
     try {
-      const { event } = req.body;
-      if (!event || !event.id || !event.type || !event.payload?.payload?.room) {
-        logger.log("Daily webhook: received incomplete event.", { body: req.body });
-        return;
-      }
-      
-      const eventId = event.id;
-      const eventType = event.type;
-      const roomName = event.payload.payload.room;
-      const userId = event.payload.payload.user_id;
+      const event = req.body;
+      const eventId = event?.id || event?.uuid; // залежно від формату
+      const eventType = event?.type;
 
-      // Find callId from roomName
-      const roomDocSnap = await admin.firestore().doc(`dailyRooms/${roomName}`).get();
-      if (!roomDocSnap.exists) {
-        logger.log(`Daily webhook: room doc not found for roomName: ${roomName}.`);
-        return;
-      }
-      const callId = roomDocSnap.data()?.callId;
-      if (!callId) {
-        logger.error(`Daily webhook: callId missing in room doc for roomName: ${roomName}.`);
-        return;
-      }
+      // Daily часто пакує payload як event.payload
+      const payload = event?.payload || {};
+      const roomName = payload?.room?.name || payload?.room_name || payload?.room;
+      const userId = payload?.participant?.user_id || payload?.user_id;
 
-      const callRef = admin.firestore().doc(`calls/${callId}`);
-      const eventRef = callRef.collection("webhookEvents").doc(eventId);
+      if (!eventId || !eventType || !roomName) return;
 
-      // Run as transaction for idempotency and atomic updates
-      await admin.firestore().runTransaction(async (tx) => {
-        const eventSnap = await tx.get(eventRef);
-        if (eventSnap.exists) {
-          logger.log(`Daily webhook: event ${eventId} already processed.`);
-          return; // Idempotent: already processed
-        }
+      const db = admin.firestore();
+
+      // roomName -> callId
+      const mapRef = db.collection("dailyRooms").doc(roomName);
+      const mapSnap = await mapRef.get();
+      const callId = mapSnap.exists ? mapSnap.data()?.callId : null;
+      if (!callId) return;
+
+      const callRef = db.collection("calls").doc(callId);
+
+      // idempotency (дедуп подій)
+      const evtRef = callRef.collection("webhookEvents").doc(String(eventId));
+      await db.runTransaction(async (tx) => {
+        const evtSnap = await tx.get(evtRef);
+        if (evtSnap.exists) return; // вже обробляли
 
         const callSnap = await tx.get(callRef);
         if (!callSnap.exists) {
-          logger.log(`Daily webhook: call doc ${callId} not found during transaction.`);
+          tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "no-call" });
           return;
         }
 
         const call = callSnap.data();
-        // Only process events for 'accepted' calls
-        if (call.status !== "accepted") {
-          logger.log(`Daily webhook: skipping event for call ${callId} with status ${call.status}.`);
-          tx.set(eventRef, { type: eventType, processedAt: admin.firestore.FieldValue.serverTimestamp() });
+        const status = call?.status;
+        if (status !== "accepted") {
+          tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "not-accepted", eventType });
           return;
         }
-        
-        let updateData = {};
-        const now = admin.firestore.FieldValue.serverTimestamp();
-        
-        if (eventType === "participant-joined" && userId) {
-           updateData = {
-               [`participants.${userId}`]: { joinedAt: now },
-               activeCount: admin.firestore.FieldValue.increment(1),
-               lastPresenceAt: now,
-           };
-        } else if (eventType === "participant-left" && userId) {
-            const newActiveCount = (call.activeCount || 1) - 1;
-            updateData = {
-                [`participants.${userId}`]: admin.firestore.FieldValue.delete(),
-                activeCount: admin.firestore.FieldValue.increment(-1),
-                lastPresenceAt: now,
-            };
 
-            if (newActiveCount <= 0) {
-                updateData.status = "ended";
-                updateData.endReason = "left";
-                updateData.endedBy = "system";
-                updateData.endedAt = now;
-            }
-        }
-        
-        if (Object.keys(updateData).length > 0) {
-            tx.update(callRef, { ...updateData, updatedAt: now });
+        const activeCount = Math.max(0, Number(call?.activeCount || 0));
+        const participants = { ...(call?.participants || {}) };
+
+        let nextActive = activeCount;
+
+        if (eventType === "participant.joined") {
+          nextActive = activeCount + 1;
+          if (userId) participants[userId] = true;
+        } else if (eventType === "participant.left") {
+          nextActive = Math.max(0, activeCount - 1);
+          if (userId) delete participants[userId];
+        } else if (eventType === "meeting.ended") {
+          // fallback: якщо meeting ended — завершуємо
+          nextActive = 0;
+        } else {
+          tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "unhandled", eventType });
+          return;
         }
 
-        // Mark event as processed
-        tx.set(eventRef, { type: eventType, userId, processedAt: now });
+        const updates = {
+          activeCount: nextActive,
+          participants,
+          lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        // auto-end: тільки якщо всі вийшли
+        if (nextActive === 0) {
+          updates.status = "ended";
+          updates.endReason = "left";
+          updates.endedBy = "system";
+          updates.endedAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+
+        tx.update(callRef, updates);
+
+        tx.set(evtRef, {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          eventType,
+          roomName,
+          userId: userId || null,
+          nextActive,
+        });
       });
-
-    } catch (error) {
-      logger.error("Daily webhook: error processing event.", { error, body: req.body });
+    } catch (e) {
+      // уже відповіли 200, тому лише лог
+      console.error("dailyWebhook error:", e);
     }
   }
 );
