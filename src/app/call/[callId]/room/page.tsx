@@ -109,42 +109,80 @@ export default function CallRoomPage() {
       hardExitToHome();
       return;
     }
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
   
-    // hard cleanup: знести будь-який “залиплий” інстанс (StrictMode/Fast Refresh)
-    try {
-      const existing = DailyIframe.getCallInstance?.();
-      existing?.destroy?.();
-    } catch {}
+    let cancelled = false;
   
-    if (callRef.current) {
-      try { callRef.current.destroy(); } catch {}
-      callRef.current = null;
-    }
+    const attachIframeToContainer = (call: any) => {
+      try {
+        const iframe: HTMLIFrameElement | undefined = call.iframe?.();
+        if (iframe && iframe.parentElement !== container) {
+          container.innerHTML = '';
+          container.appendChild(iframe);
+        }
+      } catch {}
+    };
   
-    const call = DailyIframe.createFrame(containerRef.current, {
-      iframeStyle: {
-        width: '100%',
-        height: '100%',
-        border: '0',
-        borderRadius: '16px',
-      },
-      showLeaveButton: false,
-      showFullscreenButton: true,
-    });
+    (async () => {
+      // 1) Якщо інстанс already існує (StrictMode/fast refresh) — РЕЮЗАЄМО
+      try {
+        const existing = (DailyIframe as any).getCallInstance?.();
+        if (existing) {
+          callRef.current = existing;
+          attachIframeToContainer(existing);
   
-    callRef.current = call;
-    call.join({ url: urlWithToken });
+          // якщо ще не в кімнаті — підʼєднатись
+          try {
+            // join() безпечний — якщо вже joined, Daily просто проігнорує/не зламається
+            existing.join?.({ url: urlWithToken });
+          } catch {}
   
-    call.on('left-meeting', () => {
-      try { call.destroy(); } catch {}
-      callRef.current = null;
-      hardExitToHome();
-    });
+          return; // ✅ НЕ createFrame()
+        }
+      } catch {}
+  
+      // 2) Якщо інстанса нема — створюємо новий
+      // (додатково чистимо контейнер на всякий)
+      container.innerHTML = '';
+  
+      // маленька пауза, щоб dev teardown встиг “докрутитись”
+      await new Promise((r) => setTimeout(r, 0));
+      if (cancelled) return;
+  
+      const call = DailyIframe.createFrame(container, {
+        iframeStyle: {
+          width: '100%',
+          height: '100%',
+          border: '0',
+          borderRadius: '16px',
+        },
+        showLeaveButton: false,
+        showFullscreenButton: true,
+      });
+  
+      callRef.current = call;
+  
+      call.join({ url: urlWithToken });
+  
+      call.on('left-meeting', () => {
+        // не авто-end (без webhooks), просто повертаємось
+        try { call.destroy(); } catch {}
+        callRef.current = null;
+        hardExitToHome();
+      });
+    })();
   
     return () => {
-      try { call.destroy(); } catch {}
-      callRef.current = null;
+      cancelled = true;
+  
+      // ✅ Важливо: у StrictMode не завжди хочемо “агресивно” destroy,
+      // бо React може одразу перемонтувати і нам краще реюзнути instance.
+      // Тому робимо м’який cleanup контейнера, а destroy — тільки коли реально ended.
+      try {
+        // прибрати iframe з DOM, але instance може лишитись для реюзу
+        if (containerRef.current) containerRef.current.innerHTML = '';
+      } catch {}
     };
   }, [hardExitToHome, urlWithToken]);
 
