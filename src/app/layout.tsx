@@ -6,6 +6,8 @@ import { Toaster } from '@/components/ui/toaster';
 import './globals.css';
 import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { CallManager } from '@/components/CallManager';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
+import { SidebarNav } from '@/components/sidebar-nav';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -23,13 +25,16 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} font-body antialiased`}>
         <FirebaseClientProvider>
-          <FirebaseErrorListener />
-          <CallManager />
-          <div className="flex min-h-screen w-full flex-col">
-            <Header />
-            <main className="flex-1">{children}</main>
-          </div>
-          <Toaster />
+          <SidebarProvider>
+            <FirebaseErrorListener />
+            <CallManager />
+            <SidebarNav />
+            <SidebarInset>
+              <Header />
+              <main className="flex-1">{children}</main>
+            </SidebarInset>
+            <Toaster />
+          </SidebarProvider>
         </FirebaseClientProvider>
       </body>
     </html>
