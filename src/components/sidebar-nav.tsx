@@ -131,7 +131,11 @@ export function SidebarNav() {
           {isLoading ? (
             <Skeleton className="h-10 w-full" />
           ) : (
-            <AvailabilitySwitch initialAvailability={availability} />
+            <AvailabilitySwitch
+              initialAvailability={availability}
+              className="w-full rounded-md bg-sidebar-accent p-2 group-data-[collapsible=icon]:w-auto group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0"
+              labelClassName="text-sidebar-accent-foreground group-data-[collapsible=icon]:hidden"
+            />
           )}
           <SidebarMenu>
             <SidebarMenuItem>
