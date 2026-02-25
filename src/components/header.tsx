@@ -60,12 +60,13 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-card/80 backdrop-blur-md">
       <div className="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        <Link
-          href="/"
-          className="text-2xl font-bold text-primary transition-colors hover:text-primary/80"
-        >
-          ConnectU
-        </Link>
+        {user && userProfile ? (
+          <Link href="/">
+            <UserAvatar user={userProfile} className="h-8 w-8" />
+          </Link>
+        ) : (
+          <div className="h-8 w-8" />
+        )}
 
         <nav className="hidden items-center gap-2 md:flex">
           {navLinks.map(({ href, label, icon: Icon }) => (
@@ -92,11 +93,9 @@ export function Header() {
             </Button>
           )}
         </nav>
-        {user && userProfile && (
-          <div className="hidden md:block">
-            <UserAvatar user={userProfile} className="h-8 w-8" />
-          </div>
-        )}
+        
+        {/* Spacer for desktop to keep nav centered */}
+        <div className="hidden h-8 w-8 md:block" />
 
         <div className="md:hidden">
           <DropdownMenu>
