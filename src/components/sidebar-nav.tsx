@@ -11,7 +11,7 @@ import {
   useMemoFirebase,
 } from '@/firebase';
 import { UserAvatar } from './user-avatar';
-import type { UserProfile } from '@/lib/types';
+import type { UserProfile, Availability } from '@/lib/types';
 import {
   Sidebar,
   SidebarContent,
@@ -23,6 +23,8 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { Skeleton } from './ui/skeleton';
+import { AvailabilitySwitch } from './AvailabilitySwitch';
+import { useAvailability } from '@/hooks/useAvailability';
 
 export function SidebarNav() {
   const { user, isUserLoading } = useUser();
@@ -38,6 +40,10 @@ export function SidebarNav() {
 
   const { data: userProfile, isLoading: isProfileLoading } =
     useDoc<UserProfile>(userDocRef);
+
+  const { availability, isLoading: isAvailabilityLoading } = useAvailability(
+    user?.uid
+  );
 
   const logout = () => {
     auth.signOut();
@@ -64,7 +70,8 @@ export function SidebarNav() {
     return href === '/' ? pathname === href : pathname.startsWith(href);
   };
 
-  const isLoading = isUserLoading || (user && isProfileLoading);
+  const isLoading =
+    isUserLoading || (user && (isProfileLoading || isAvailabilityLoading));
 
   return (
     <Sidebar collapsible="icon" side="left" className="border-r">
@@ -78,22 +85,22 @@ export function SidebarNav() {
             </div>
           </div>
         ) : userProfile ? (
-            <SidebarMenuButton
-              asChild
-              size="lg"
-              onClick={closeSheet}
-              className="h-auto p-1"
-            >
-              <Link href="/profile">
-                <UserAvatar user={userProfile} className="size-9" />
-                <div className="flex flex-col">
-                  <span className="font-semibold">{userProfile.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {userProfile.email}
-                  </span>
-                </div>
-              </Link>
-            </SidebarMenuButton>
+          <SidebarMenuButton
+            asChild
+            size="lg"
+            onClick={closeSheet}
+            className="h-auto p-1"
+          >
+            <Link href="/profile">
+              <UserAvatar user={userProfile} className="size-9" />
+              <div className="flex flex-col">
+                <span className="font-semibold">{userProfile.name}</span>
+                <span className="text-xs text-muted-foreground">
+                  {userProfile.email}
+                </span>
+              </div>
+            </Link>
+          </SidebarMenuButton>
         ) : (
           <div className="p-2 text-lg font-semibold">ConnectU</div>
         )}
@@ -103,24 +110,29 @@ export function SidebarNav() {
         <SidebarMenu>
           {(user ? navLinks : authLinks).map(({ href, label, icon: Icon }) => (
             <SidebarMenuItem key={label}>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isActive(href)}
-                  onClick={closeSheet}
-                  tooltip={label}
-                >
-                  <Link href={href}>
-                    <Icon />
-                    <span>{label}</span>
-                  </Link>
-                </SidebarMenuButton>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive(href)}
+                onClick={closeSheet}
+                tooltip={label}
+              >
+                <Link href={href}>
+                  <Icon />
+                  <span>{label}</span>
+                </Link>
+              </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
       </SidebarContent>
 
       {user && (
-        <SidebarFooter className="border-t p-2">
+        <SidebarFooter className="flex flex-col gap-2 border-t p-2">
+          {isLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : (
+            <AvailabilitySwitch initialAvailability={availability} />
+          )}
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton onClick={logout} tooltip="Logout">

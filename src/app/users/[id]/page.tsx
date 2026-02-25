@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
+import { isInstantOnline } from '@/lib/availability';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -29,6 +30,7 @@ export default function UserProfilePage() {
   );
 
   const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
+  const online = isInstantOnline(userProfile?.availability);
 
   const handleCallClick = async () => {
     if (!userProfile || !currentUser) {
@@ -115,15 +117,14 @@ export default function UserProfilePage() {
           </p>
           {currentUser && currentUser.uid !== userProfile.id && (
             <Button
-              variant="outline"
-              size="icon"
-              className="mt-4"
+              variant={online ? 'default' : 'secondary'}
+              className="mt-6"
               onClick={handleCallClick}
-              disabled={isCalling}
-              aria-label="Start video call"
-              title="Start video call"
+              disabled={isCalling || !online}
+              aria-label={online ? 'Start video call' : 'User is not available for calls'}
             >
-              <Phone className="h-4 w-4" />
+              <Phone className="mr-2 h-4 w-4" />
+              {online ? 'Call Now' : 'Currently Unavailable'}
             </Button>
           )}
         </CardContent>

@@ -1,5 +1,10 @@
 import type { Timestamp } from 'firebase/firestore';
 
+export type Availability = {
+  status: 'online' | 'offline';
+  until?: Timestamp;
+};
+
 export type UserProfile = {
   id: string;
   name: string;
@@ -8,6 +13,7 @@ export type UserProfile = {
   avatarUrl?: string;
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
+  availability?: Availability;
 };
 
 export type Call = {

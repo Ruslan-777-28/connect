@@ -37,6 +37,23 @@
           "type": "string",
           "description": "Timestamp indicating when the user profile was last updated.",
           "format": "date-time"
+        },
+        "availability": {
+          "type": "object",
+          "description": "User's real-time availability status for instant calls.",
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": [
+                "online",
+                "offline"
+              ]
+            },
+            "until": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
         }
       },
       "required": [

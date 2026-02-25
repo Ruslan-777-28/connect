@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { useFirebaseApp, useUser } from '@/firebase';
 import { startVideoCall } from '@/lib/calls';
 import { useRouter } from 'next/navigation';
+import { isInstantOnline } from '@/lib/availability';
 
 interface UserCardProps {
   user: UserProfile;
@@ -22,6 +23,7 @@ export function UserCard({ user }: UserCardProps) {
   const { user: currentUser } = useUser();
   const [isCalling, setIsCalling] = useState(false);
   const router = useRouter();
+  const online = isInstantOnline(user.availability);
 
   const handleCallClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -59,22 +61,22 @@ export function UserCard({ user }: UserCardProps) {
         <CardContent className="flex flex-col items-center p-6 text-center">
           <UserAvatar
             user={user}
-            className="mb-4 h-24 w-24 border-2 border-primary/20"
+            className="mb-4 h-24 w-24"
           />
           <h3 className="text-lg font-semibold text-foreground">{user.name}</h3>
           <p className="text-sm text-muted-foreground">{user.email}</p>
 
           {currentUser && currentUser.uid !== user.id && (
-            <Button
-              variant="outline"
-              size="icon"
+             <Button
+              variant={online ? "default" : "outline"}
+              size="sm"
               className="mt-4"
               onClick={handleCallClick}
-              disabled={isCalling}
-              aria-label="Start video call"
-              title="Start video call"
-            >
+              disabled={isCalling || !online}
+              aria-label={online ? "Start video call" : "User is not available for calls"}
+             >
               <Phone className="h-4 w-4" />
+              <span className="ml-2">{online ? 'Call Now' : 'Unavailable'}</span>
             </Button>
           )}
         </CardContent>

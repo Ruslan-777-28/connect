@@ -12,6 +12,16 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isUpdatingProfile() {
+      return request.resource.data.diff(resource.data).changedKeys()
+        .hasOnly(['name', 'bio', 'avatarUrl', 'updatedAt']);
+    }
+
+    function isUpdatingAvailability() {
+      return request.resource.data.diff(resource.data).changedKeys()
+        .hasOnly(['availability']);
+    }
+
     function isCallParticipant() {
       return isSignedIn()
         && (resource.data.callerId == request.auth.uid
@@ -25,10 +35,12 @@ service cloud.firestore {
 
     // ---------- Users ----------
     // Allow signed in users to read profiles.
-    // Allow users to create and update their own profile.
+    // Allow users to create their own profile.
+    // Allow users to update specific fields of their own profile.
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create, update: if isSelf(uid);
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid) && (isUpdatingProfile() || isUpdatingAvailability());
       allow delete: if false; // Disallow client-side deletion for safety
     }
 

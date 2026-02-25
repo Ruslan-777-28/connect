@@ -2,6 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import type { UserProfile } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { User as UserIcon } from 'lucide-react';
+import { isInstantOnline } from '@/lib/availability';
 
 interface UserAvatarProps {
   user: UserProfile;
@@ -17,8 +18,10 @@ const getInitials = (name: string) => {
 };
 
 export function UserAvatar({ user, className }: UserAvatarProps) {
+  const online = isInstantOnline(user?.availability);
+
   return (
-    <Avatar className={cn('h-10 w-10', className)}>
+    <Avatar className={cn('h-10 w-10', className, online && 'ring-2 ring-green-500 ring-offset-2 ring-offset-background')}>
       <AvatarImage src={user.avatarUrl} alt={user.name} />
       <AvatarFallback>
         {user.name ? (
