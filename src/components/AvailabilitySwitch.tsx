@@ -68,7 +68,7 @@ export function AvailabilitySwitch({
   };
 
   const isChecked = initialAvailability?.status === 'online';
-  const labelText = isChecked ? 'Available now' : 'By appointment only';
+  const labelText = isChecked ? 'Available now' : '';
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
