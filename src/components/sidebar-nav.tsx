@@ -78,14 +78,13 @@ export function SidebarNav() {
             </div>
           </div>
         ) : userProfile ? (
-          <Link href="/profile" passHref legacyBehavior>
             <SidebarMenuButton
               asChild
               size="lg"
               onClick={closeSheet}
               className="h-auto p-1"
             >
-              <a>
+              <Link href="/profile">
                 <UserAvatar user={userProfile} className="size-9" />
                 <div className="flex flex-col">
                   <span className="font-semibold">{userProfile.name}</span>
@@ -93,9 +92,8 @@ export function SidebarNav() {
                     {userProfile.email}
                   </span>
                 </div>
-              </a>
+              </Link>
             </SidebarMenuButton>
-          </Link>
         ) : (
           <div className="p-2 text-lg font-semibold">ConnectU</div>
         )}
@@ -105,19 +103,17 @@ export function SidebarNav() {
         <SidebarMenu>
           {(user ? navLinks : authLinks).map(({ href, label, icon: Icon }) => (
             <SidebarMenuItem key={label}>
-              <Link href={href} passHref legacyBehavior>
                 <SidebarMenuButton
                   asChild
                   isActive={isActive(href)}
                   onClick={closeSheet}
                   tooltip={label}
                 >
-                  <a>
+                  <Link href={href}>
                     <Icon />
                     <span>{label}</span>
-                  </a>
+                  </Link>
                 </SidebarMenuButton>
-              </Link>
             </SidebarMenuItem>
           ))}
         </SidebarMenu>
