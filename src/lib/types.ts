@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 export type Availability = {
@@ -34,4 +35,23 @@ export type Call = {
   receiverActingAs?: 'client' | 'pro';
   endReason?: string | null;
   endedBy?: string | null;
+};
+
+export type Pricing = {
+  ratePerMinute?: number;
+  ratePerFile?: number;
+  ratePerQuestion?: number;
+  currency: string;
+};
+
+export type CommunicationOffer = {
+  id: string;
+  ownerId: string;
+  type: 'video' | 'file' | 'text';
+  categoryId: string;
+  subcategoryId: string;
+  pricing: Pricing;
+  status: 'active' | 'inactive';
+  createdAt: Timestamp | any;
+  updatedAt: Timestamp | any;
 };

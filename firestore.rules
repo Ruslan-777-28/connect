@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -10,6 +11,10 @@ service cloud.firestore {
 
     function isSelf(uid) {
       return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
     }
 
     function isUpdatingProfile() {
@@ -34,22 +39,29 @@ service cloud.firestore {
     }
 
     // ---------- Users ----------
-    // Allow signed in users to read profiles.
-    // Allow users to create their own profile.
-    // Allow users to update specific fields of their own profile.
     match /users/{uid} {
       allow read: if isSignedIn();
       allow create: if isSelf(uid);
       allow update: if isSelf(uid) && (isUpdatingProfile() || isUpdatingAvailability());
-      allow delete: if false; // Disallow client-side deletion for safety
+      allow delete: if false;
     }
 
     // ---------- Calls (1:1 video) ----------
-    // Allow only call participants to read the call document.
-    // All writes are handled by Cloud Functions.
     match /calls/{callId} {
       allow read: if isCallParticipant();
       allow create, update, delete: if false;
+    }
+
+    // ---------- Communication Offers ----------
+    match /communicationOffers/{offerId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isSelf(request.resource.data.ownerId);
+      allow update, delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
+    // ---------- Daily Rooms (internal) ----------
+    match /dailyRooms/{roomName} {
+      allow read, write: if false; // System only
     }
   }
 }

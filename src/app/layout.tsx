@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
@@ -8,6 +9,7 @@ import { FirebaseErrorListener } from '@/components/FirebaseErrorListener';
 import { CallManager } from '@/components/CallManager';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { SidebarNav } from '@/components/sidebar-nav';
+import { TabBar } from '@/components/TabBar';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
@@ -31,7 +33,8 @@ export default function RootLayout({
             <SidebarNav />
             <SidebarInset>
               <Header />
-              <main className="flex-1">{children}</main>
+              <main className="flex-1 pb-16">{children}</main>
+              <TabBar />
             </SidebarInset>
             <Toaster />
           </SidebarProvider>

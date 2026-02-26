@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "UserProfile": {
@@ -124,6 +125,31 @@
         }
       },
       "required": ["callerId", "receiverId", "status", "createdAt", "updatedAt", "roomName", "roomUrl"]
+    },
+    "CommunicationOffer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "CommunicationOffer",
+      "type": "object",
+      "description": "A proposal for communication services offered by a user.",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "file", "text"] },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "pricing": {
+          "type": "object",
+          "properties": {
+            "ratePerMinute": { "type": "number" },
+            "ratePerFile": { "type": "number" },
+            "ratePerQuestion": { "type": "number" },
+            "currency": { "type": "string" }
+          }
+        },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "pricing", "status"]
     }
   },
   "auth": {
@@ -141,11 +167,11 @@
           "schema": {
             "$ref": "#/backend/entities/UserProfile"
           },
-          "description": "Stores user profile information.  Path-based ownership ensures only the authenticated user can access their own profile.",
+          "description": "Stores user profile information.",
           "params": [
             {
               "name": "userId",
-              "description": "The unique identifier of the user, corresponding to the Firebase Auth UID."
+              "description": "The unique identifier of the user."
             }
           ]
         }
@@ -165,8 +191,23 @@
             }
           ]
         }
+      },
+      {
+        "path": "/communicationOffers/{offerId}",
+        "definition": {
+          "entityName": "CommunicationOffer",
+          "schema": {
+            "$ref": "#/backend/entities/CommunicationOffer"
+          },
+          "description": "Stores communication service proposals.",
+          "params": [
+            {
+              "name": "offerId",
+              "description": "The unique identifier for the offer."
+            }
+          ]
+        }
       }
-    ],
-    "reasoning": "The Firestore data structure is designed to support user authentication, profile management, user listings, and profile viewing features of the ConnectU application, adhering to the core design principles and strategy mandates.\n\n**Authorization Independence:** User profiles are stored directly under the `/users/{userId}` path, ensuring ownership is directly tied to the path. This eliminates the need for `get()` calls in security rules to verify ownership, thus achieving Authorization Independence.\n\n**Structural Segregation:** User profiles are stored in a dedicated collection (`/users/{userId}`), which simplifies security rules by ensuring that all documents in the collection share the same security requirements (i.e., only the authenticated user can read/write their own profile).\n\n**Access Modeling:** Path-based ownership (`/users/{userId}`) is used for user profiles, which naturally secures user data to only be accessible by the authenticated user.\n\n**QAPs (Rules are not Filters):** The structure supports secure `list` operations because profiles are stored with the user's ID as the document ID.  Listing users for the 'Home' page only requires reading the desired fields (`name`, `avatarUrl`) and does not expose any private or sensitive data without explicit authorization (e.g., email).\n\nThe structure inherently supports invariants such as ensuring that only the authenticated user can modify their profile and that timestamps are automatically managed during profile creation and updates."
+    ]
   }
 }
