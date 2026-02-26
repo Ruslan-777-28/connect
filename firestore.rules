@@ -40,7 +40,8 @@ service cloud.firestore {
 
     // ---------- Users ----------
     match /users/{uid} {
-      allow read: if isSignedIn();
+      // Allow everyone to read user profiles for discovery and status checks.
+      allow read: if true;
       allow create: if isSelf(uid);
       allow update: if isSelf(uid) && (isUpdatingProfile() || isUpdatingAvailability());
       allow delete: if false;
