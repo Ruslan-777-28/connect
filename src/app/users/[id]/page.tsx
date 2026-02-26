@@ -141,7 +141,7 @@ export default function UserProfilePage() {
       </Card>
 
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold tracking-tight">Послуги та пропозиції</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Пропозиції</h2>
         
         {loadingOffers ? (
           <div className="grid gap-4 sm:grid-cols-2">
