@@ -1,18 +1,20 @@
+
 'use client';
 
 import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc } from 'firebase/firestore';
-import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp } from '@/firebase';
-import type { UserProfile } from '@/lib/types';
+import { doc, collection, query, where } from 'firebase/firestore';
+import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp, useCollection } from '@/firebase';
+import type { UserProfile, CommunicationOffer } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Phone } from 'lucide-react';
+import { Phone, Video, FileText, HelpCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
+import { Badge } from '@/components/ui/badge';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -30,6 +32,14 @@ export default function UserProfilePage() {
   );
 
   const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
+  
+  const offersQuery = useMemoFirebase(
+    () => (id ? query(collection(firestore, 'communicationOffers'), where('ownerId', '==', id), where('status', '==', 'active')) : null),
+    [id, firestore]
+  );
+  
+  const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
+
   const online = isInstantOnline(userProfile?.availability);
 
   const handleCallClick = async () => {
@@ -97,8 +107,8 @@ export default function UserProfilePage() {
       : 'N/A';
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8">
-      <Card className="overflow-hidden">
+    <div className="container mx-auto max-w-4xl px-4 py-8 pb-24">
+      <Card className="overflow-hidden mb-8">
         <div className="h-32 bg-primary/20" />
         <CardContent className="relative -mt-16 flex flex-col items-center p-6 text-center">
           <UserAvatar
@@ -129,6 +139,51 @@ export default function UserProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold tracking-tight">Послуги та пропозиції</h2>
+        
+        {loadingOffers ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+          </div>
+        ) : offers && offers.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {offers.map((offer) => (
+              <Card key={offer.id} className="relative overflow-hidden transition-shadow hover:shadow-md">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-full bg-primary/10 p-2 text-primary">
+                        {offer.type === 'video' && <Video className="h-5 w-5" />}
+                        {offer.type === 'file' && <FileText className="h-5 w-5" />}
+                        {offer.type === 'text' && <HelpCircle className="h-5 w-5" />}
+                      </div>
+                      <div>
+                        <h3 className="font-semibold capitalize">{offer.type === 'video' ? 'Відеочат' : offer.type === 'file' ? 'Файл + повідомлення' : 'Питання та відповідь'}</h3>
+                        <p className="text-sm text-muted-foreground">{offer.categoryId} / {offer.subcategoryId}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-lg font-bold">
+                      {offer.pricing.ratePerMinute && `$${offer.pricing.ratePerMinute}/хв`}
+                      {offer.pricing.ratePerFile && `$${offer.pricing.ratePerFile}/файл`}
+                      {offer.pricing.ratePerQuestion && `$${offer.pricing.ratePerQuestion}/пит`}
+                    </Badge>
+                  </div>
+                  <Button className="mt-6 w-full" variant="secondary" disabled={offer.type !== 'video'}>
+                    Замовити
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+            Користувач ще не створив пропозицій.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

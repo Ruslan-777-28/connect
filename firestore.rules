@@ -55,7 +55,8 @@ service cloud.firestore {
 
     // ---------- Communication Offers ----------
     match /communicationOffers/{offerId} {
-      allow read: if isSignedIn();
+      // Offers are public for discovery
+      allow read: if true;
       allow create: if isSignedIn() && isSelf(request.resource.data.ownerId);
       allow update, delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
