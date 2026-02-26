@@ -130,19 +130,20 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "CommunicationOffer",
       "type": "object",
-      "description": "A proposal for communication services offered by a user.",
+      "description": "A proposal for communication services offered by a user, including pricing details.",
       "properties": {
-        "ownerId": { "type": "string" },
-        "type": { "type": "string", "enum": ["video", "file", "text"] },
+        "ownerId": { "type": "string", "description": "The UID of the user offering the service." },
+        "type": { "type": "string", "enum": ["video", "file", "text"], "description": "The communication format: video chat, file delivery, or text Q&A." },
         "categoryId": { "type": "string" },
         "subcategoryId": { "type": "string" },
         "pricing": {
           "type": "object",
+          "description": "Pricing configuration based on the offer type.",
           "properties": {
-            "ratePerMinute": { "type": "number" },
-            "ratePerFile": { "type": "number" },
-            "ratePerQuestion": { "type": "number" },
-            "currency": { "type": "string" }
+            "ratePerMinute": { "type": "number", "description": "Cost per minute for video calls." },
+            "ratePerFile": { "type": "number", "description": "Cost per file shared." },
+            "ratePerQuestion": { "type": "number", "description": "Cost per individual question answered." },
+            "currency": { "type": "string", "default": "USD" }
           }
         },
         "status": { "type": "string", "enum": ["active", "inactive"] },
@@ -199,7 +200,7 @@
           "schema": {
             "$ref": "#/backend/entities/CommunicationOffer"
           },
-          "description": "Stores communication service proposals.",
+          "description": "Stores communication service proposals and their respective prices.",
           "params": [
             {
               "name": "offerId",
