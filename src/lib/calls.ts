@@ -1,3 +1,4 @@
+
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -9,6 +10,7 @@ type StartCallResult = {
   roomUrl: string;
   token: string;
   receiverId: string;
+  offerId: string;
 };
 
 type EndCallResult = { ok: true; alreadyEnded?: true };
@@ -32,26 +34,26 @@ export async function endCallClient(
 
 export async function startVideoCall(
   app: FirebaseApp,
-  receiverId: string
+  receiverId: string,
+  offerId: string
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
 
-    const startCall = httpsCallable<{ receiverId: string }, StartCallResult>(
+    const startCall = httpsCallable<{ receiverId: string, offerId: string }, StartCallResult>(
       functions,
       'startCall'
     );
 
-    const res = await startCall({ receiverId });
+    const res = await startCall({ receiverId, offerId });
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
-      throw new Error('startCall did not return callId/token/roomUrl');
+      throw new Error('startCall did not return required data');
     }
 
     const { callId, roomUrl, token } = data;
 
-    // Save to sessionStorage instead of opening a window
     sessionStorage.setItem(`dailyToken:${callId}`, token);
     sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 

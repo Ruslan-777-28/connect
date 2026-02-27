@@ -17,6 +17,17 @@ export type UserProfile = {
   availability?: Availability;
 };
 
+export type PricingSnapshot = {
+  type: 'video' | 'file' | 'text';
+  categoryId: string;
+  subcategoryId: string;
+  currency: string;
+  ratePerMinute?: number;
+  ratePerFile?: number;
+  ratePerQuestion?: number;
+  capturedAt: Timestamp | any;
+};
+
 export type Call = {
   id: string;
   callerId: string;
@@ -35,6 +46,8 @@ export type Call = {
   receiverActingAs?: 'client' | 'pro';
   endReason?: string | null;
   endedBy?: string | null;
+  offerId?: string;
+  pricingSnapshot?: PricingSnapshot;
 };
 
 export type Pricing = {

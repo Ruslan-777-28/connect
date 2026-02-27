@@ -1,3 +1,4 @@
+
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
@@ -23,9 +24,8 @@ function verifyDailyWebhook(req, secretB64) {
   if (!sig || !ts) return false;
 
   const secret = Buffer.from(secretB64, "base64");
-  const raw = req.rawBody; // критично
+  const raw = req.rawBody; 
 
-  // message = "{timestamp}.{rawBody}"
   const msg = Buffer.concat([Buffer.from(ts + "."), raw]);
   const digest = crypto.createHmac("sha256", secret).update(msg).digest("base64");
 
@@ -75,12 +75,10 @@ async function getUserName(uid) {
   const snap = await admin.firestore().doc(`users/${uid}`).get();
   const data = snap.exists ? snap.data() : null;
   const name = data?.name;
-  // Fallback if name is missing for some reason, to prevent token from breaking.
   return (typeof name === "string" && name.trim()) ? name.trim() : `user-${uid.slice(0, 6)}`;
 }
 
 async function createDailyRoomPrivate(apiKey) {
-  // random room name to avoid collisions
   const roomName = `call-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   const room = await dailyFetch("rooms", apiKey, {
@@ -89,8 +87,6 @@ async function createDailyRoomPrivate(apiKey) {
       name: roomName,
       privacy: "private",
       properties: {
-        // Leave prejoin UI true (useful for camera/mic selection),
-        // but password/manual fields are no longer needed with a meeting token.
         enable_prejoin_ui: true,
       },
     },
@@ -100,8 +96,6 @@ async function createDailyRoomPrivate(apiKey) {
 }
 
 async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isOwner }) {
-  // meeting token gives automatic access to a private room without passwords
-  // exp: unix seconds (e.g., 2 hours)
   const exp = Math.floor(Date.now() / 1000) + 2 * 60 * 60;
 
   const token = await dailyFetch("meeting-tokens", apiKey, {
@@ -122,31 +116,63 @@ async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isO
 
 /**
  * startCall
- * data: { receiverId: string }
- * returns: { callId, roomUrl, roomName, token, receiverId }
+ * data: { receiverId: string, offerId: string }
+ * returns: { callId, roomUrl, roomName, token, receiverId, offerId }
  */
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
     const callerId = requireAuth(request);
     const receiverId = assertString(request.data?.receiverId, "receiverId");
+    const offerId = assertString(request.data?.offerId, "offerId");
 
     if (receiverId === callerId) {
       throw new HttpsError("invalid-argument", "Cannot call yourself");
     }
 
-    // Check that receiver exists in users/{uid}
     const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
     if (!receiverSnap.exists) {
       throw new HttpsError("not-found", "Receiver user profile not found");
     }
 
+    // Validate availability
+    const availability = receiverSnap.get("availability");
+    const isOnline = availability?.status === "online";
+    let isExpired = false;
+    if (availability?.until) {
+        isExpired = availability.until.toMillis() < Date.now();
+    }
+
+    if (!isOnline || isExpired) {
+        throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
+    }
+
+    // Validate offer
+    const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
+    if (!offerSnap.exists) {
+        throw new HttpsError("not-found", "Offer not found");
+    }
+    const offer = offerSnap.data();
+
+    if (offer.ownerId !== receiverId) {
+        throw new HttpsError("failed-precondition", "Offer does not belong to receiver");
+    }
+    if (offer.status !== "active") {
+        throw new HttpsError("failed-precondition", "Offer is not active");
+    }
+    if (offer.type !== "video") {
+        throw new HttpsError("invalid-argument", "Offer type must be video for a video call");
+    }
+
+    const ratePerMinute = Number(offer.pricing?.ratePerMinute ?? 0);
+    if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) {
+        throw new HttpsError("failed-precondition", "Invalid rate in offer");
+    }
+
     const apiKey = DAILY_API_KEY.value();
 
-    // 1) create room
     const { roomName, roomUrl } = await createDailyRoomPrivate(apiKey);
 
-    // 2) generate token for caller
     const callerName = await getUserName(callerId);
     const callerToken = await createDailyMeetingToken(apiKey, {
       roomName,
@@ -159,14 +185,12 @@ exports.startCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
-    // 3) write to calls/{callId}
     const callRef = admin.firestore().collection("calls").doc();
     const nowTs = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45_000);
 
-
     await callRef.set({
-      status: "ringing",               // ringing -> accepted -> ended
+      status: "ringing",
       callerId,
       receiverId,
       callerName,
@@ -175,8 +199,16 @@ exports.startCall = onCall(
       roomUrl,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      // NEW: server lifecycle deadline
       expiresAt,
+      offerId,
+      pricingSnapshot: {
+        type: "video",
+        categoryId: offer.categoryId || "",
+        subcategoryId: offer.subcategoryId || "",
+        currency: offer.pricing.currency || "USD",
+        ratePerMinute,
+        capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }
     });
 
     await admin.firestore().collection("dailyRooms").doc(roomName).set({
@@ -188,17 +220,13 @@ exports.startCall = onCall(
       callId: callRef.id,
       roomName,
       roomUrl,
-      token: callerToken,              // token is returned only to the client, NOT in Firestore
+      token: callerToken,
       receiverId,
+      offerId
     };
   }
 );
 
-/**
- * acceptCall
- * data: { callId: string }
- * returns: { roomUrl, roomName, token }
- */
 exports.acceptCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
@@ -251,11 +279,6 @@ exports.acceptCall = onCall(
   }
 );
 
-/**
- * endCall
- * data: { callId: string, reason?: string }
- * returns: { ok: true, alreadyEnded?: true }
- */
 exports.endCall = onCall(
   { region: "us-central1" },
   async (request) => {
@@ -299,10 +322,6 @@ exports.endCall = onCall(
   }
 );
 
-/**
- * cleanupMissedCalls (scheduled)
- * Every minute: end calls stuck in "ringing" past expiresAt.
- */
 exports.cleanupMissedCalls = onSchedule(
   { region: "us-central1", schedule: "every 1 minutes" },
   async () => {
@@ -340,25 +359,21 @@ exports.cleanupMissedCalls = onSchedule(
 exports.dailyWebhook = onRequest(
   { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
   async (req, res) => {
-    // Daily webhooks приходять POST
     if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
     const secretB64 = DAILY_WEBHOOK_HMAC.value();
 
-    // strict verify
     if (!verifyDailyWebhook(req, secretB64)) {
       return res.status(401).send("Invalid signature");
     }
 
-    // відповідаємо швидко (Daily любить швидко)
     res.status(200).send("ok");
 
     try {
       const event = req.body;
-      const eventId = event?.id || event?.uuid; // залежно від формату
+      const eventId = event?.id || event?.uuid;
       const eventType = event?.type;
 
-      // Daily часто пакує payload як event.payload
       const payload = event?.payload || {};
       const roomName = payload?.room?.name || payload?.room_name || payload?.room;
       const userId = payload?.participant?.user_id || payload?.user_id;
@@ -367,7 +382,6 @@ exports.dailyWebhook = onRequest(
 
       const db = admin.firestore();
 
-      // roomName -> callId
       const mapRef = db.collection("dailyRooms").doc(roomName);
       const mapSnap = await mapRef.get();
       const callId = mapSnap.exists ? mapSnap.data()?.callId : null;
@@ -375,11 +389,10 @@ exports.dailyWebhook = onRequest(
 
       const callRef = db.collection("calls").doc(callId);
 
-      // idempotency (дедуп подій)
       const evtRef = callRef.collection("webhookEvents").doc(String(eventId));
       await db.runTransaction(async (tx) => {
         const evtSnap = await tx.get(evtRef);
-        if (evtSnap.exists) return; // вже обробляли
+        if (evtSnap.exists) return; 
 
         const callSnap = await tx.get(callRef);
         if (!callSnap.exists) {
@@ -406,7 +419,6 @@ exports.dailyWebhook = onRequest(
           nextActive = Math.max(0, activeCount - 1);
           if (userId) delete participants[userId];
         } else if (eventType === "meeting.ended") {
-          // fallback: якщо meeting ended — завершуємо
           nextActive = 0;
         } else {
           tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "unhandled", eventType });
@@ -420,7 +432,6 @@ exports.dailyWebhook = onRequest(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        // auto-end: тільки якщо всі вийшли
         if (nextActive === 0) {
           updates.status = "ended";
           updates.endReason = "left";
@@ -439,7 +450,6 @@ exports.dailyWebhook = onRequest(
         });
       });
     } catch (e) {
-      // уже відповіли 200, тому лише лог
       console.error("dailyWebhook error:", e);
     }
   }
