@@ -1,3 +1,4 @@
+
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -57,7 +58,10 @@ export async function startVideoCall(
     sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 
     return { callId };
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'failed-precondition') {
+      throw new Error('USER_UNAVAILABLE');
+    }
     throw error;
   }
 }

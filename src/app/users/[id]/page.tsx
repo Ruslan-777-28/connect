@@ -107,10 +107,14 @@ export default function UserProfilePage() {
       const { callId } = await startVideoCall(app, userProfile.id, offerId);
       router.push(`/call/${callId}`);
     } catch (error: any) {
+      const description = error.message === 'USER_UNAVAILABLE' 
+        ? 'Користувач зараз недоступний для дзвінків.' 
+        : (error.message || 'Could not initiate call.');
+        
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Could not initiate call.',
+        description,
       });
       setIsCalling(false);
     }
@@ -256,7 +260,7 @@ export default function UserProfilePage() {
                         {offer.type === 'video' ? (
                           <>
                             <Phone className="mr-2 h-4 w-4" />
-                            {online ? 'Виклик' : 'Недоступний'}
+                            {isCalling ? 'Starting...' : (online ? 'Виклик' : 'Недоступний')}
                           </>
                         ) : 'Замовити'}
                       </Button>
