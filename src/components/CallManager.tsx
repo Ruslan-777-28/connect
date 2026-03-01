@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
@@ -18,8 +19,6 @@ import {
   onSnapshot,
   Unsubscribe,
   getDoc,
-  orderBy,
-  limit,
 } from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { useToast, toast as pushToast } from '@/hooks/use-toast';
@@ -94,32 +93,25 @@ export function CallManager() {
     };
   }, []);
 
-  const [activeCall, setActiveCall] = useState<Call | null>(null);
-  const acceptedAsCallerQuery = useMemoFirebase(() => {
+  // Tracking for active accepted calls (for the bar)
+  // We use simpler queries to avoid composite index requirements
+  const callerCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
-    return query(
-      collection(firestore, 'calls'),
-      where('callerId', '==', user.uid),
-      where('status', '==', 'accepted')
-    );
+    return query(collection(firestore, 'calls'), where('callerId', '==', user.uid));
   }, [user, firestore]);
 
-  const acceptedAsReceiverQuery = useMemoFirebase(() => {
+  const receiverCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
-    return query(
-      collection(firestore, 'calls'),
-      where('receiverId', '==', user.uid),
-      where('status', '==', 'accepted')
-    );
+    return query(collection(firestore, 'calls'), where('receiverId', '==', user.uid));
   }, [user, firestore]);
 
-  const { data: acceptedAsCaller } = useCollection<Call>(acceptedAsCallerQuery);
-  const { data: acceptedAsReceiver } = useCollection<Call>(acceptedAsReceiverQuery);
+  const { data: callerCalls } = useCollection<Call>(callerCallsQuery);
+  const { data: receiverCalls } = useCollection<Call>(receiverCallsQuery);
 
-  useEffect(() => {
-    const allAccepted = [...(acceptedAsCaller || []), ...(acceptedAsReceiver || [])];
-    setActiveCall(allAccepted.length > 0 ? allAccepted[0] : null);
-  }, [acceptedAsCaller, acceptedAsReceiver]);
+  const activeCall = useMemo(() => {
+    const all = [...(callerCalls || []), ...(receiverCalls || [])];
+    return all.find(c => c.status === 'accepted') || null;
+  }, [callerCalls, receiverCalls]);
 
   const callerDocRef = useMemoFirebase(() => 
     activeCall?.callerId ? doc(firestore, 'users', activeCall.callerId) : null,
@@ -139,116 +131,129 @@ export function CallManager() {
       return;
     }
 
+    // SIMPLE QUERY: No status, no orderBy, no limits. Avoids composite indexes.
     const q = query(
       collection(firestore, 'calls'),
-      where('receiverId', '==', user.uid),
-      where('status', '==', 'ringing'),
-      orderBy('createdAt', 'desc'),
-      limit(1)
+      where('receiverId', '==', user.uid)
     );
 
     const unsub = onSnapshot(q, (snap) => {
       if (!initializedRef.current) {
         initializedRef.current = true;
+        // Skip processing initial snapshot if you want to only show "new" events
+      }
+
+      // JS FILTERING & SORTING: Production-safe logic
+      const ringingCalls = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Call))
+        .filter(d => d.status === 'ringing')
+        .sort((a, b) => {
+            const timeA = a.createdAt?.toMillis?.() || 0;
+            const timeB = b.createdAt?.toMillis?.() || 0;
+            return timeB - timeA;
+        });
+
+      const topRingingCall = ringingCalls[0];
+
+      if (!topRingingCall) {
+        hideIncomingToast();
         return;
       }
 
-      for (const change of snap.docChanges()) {
-        if (change.type !== 'added') continue;
-        
-        const callDoc = change.doc;
-        const callId = callDoc.id;
-        
-        if (activeIncomingCallIdRef.current === callId && incomingToastIdRef.current) continue;
-        
-        const call = callDoc.data();
-        const callerName = (call?.callerName as string) || 'Someone';
+      const callId = topRingingCall.id;
 
+      // Avoid duplicate toasts for the same call ID
+      if (activeIncomingCallIdRef.current === callId && incomingToastIdRef.current) {
+        return;
+      }
+
+      // Hide old toast if we are switching to a newer call or if state changed
+      hideIncomingToast();
+
+      const callerName = topRingingCall.callerName || 'Someone';
+
+      const accept = async () => {
+        if (busyCallIdRef.current) return;
+        busyCallIdRef.current = callId;
+        setBusyCallId(callId);
         hideIncomingToast();
 
-        const accept = async () => {
-          if (busyCallIdRef.current) return;
-          busyCallIdRef.current = callId;
-          setBusyCallId(callId);
-          hideIncomingToast();
+        try {
+          const functions = getFunctions(app, 'us-central1');
+          const callDocRef = doc(firestore, 'calls', callId);
 
-          try {
-            const functions = getFunctions(app, 'us-central1');
-            const callDocRef = doc(firestore, 'calls', callId);
-
-            const snap = await getDoc(callDocRef);
-            const current = snap.data() as Call | undefined;
-            if (!current || current.status !== 'ringing') {
-              pushToast({
-                variant: 'destructive',
-                title: 'Call no longer available',
-                description: 'This call has already ended.',
-              });
-              return;
-            }
-
-            const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
-            const res = await acceptCall({ callId });
-            const data = res.data;
-
-            if (!data?.token || !data?.roomUrl) {
-              throw new Error('acceptCall did not return token/roomUrl');
-            }
-
-            sessionStorage.setItem(`dailyToken:${callId}`, data.token);
-            sessionStorage.setItem(`dailyRoomUrl:${callId}`, data.roomUrl);
-            router.push(`/call/${callId}`);
-            
-          } catch (e: any) {
+          const snap = await getDoc(callDocRef);
+          const current = snap.data() as Call | undefined;
+          if (!current || current.status !== 'ringing') {
             pushToast({
               variant: 'destructive',
-              title: 'Accept failed',
-              description: e.message || 'Could not accept the call.',
+              title: 'Call no longer available',
+              description: 'This call has already ended.',
             });
-          } finally {
-            busyCallIdRef.current = null;
-            setBusyCallId(null);
+            return;
           }
-        };
 
-        const decline = async () => {
-          if (busyCallIdRef.current) return;
-          busyCallIdRef.current = callId;
-          setBusyCallId(callId);
-          hideIncomingToast();
+          const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
+          const res = await acceptCall({ callId });
+          const data = res.data;
 
-          try {
-            const functions = getFunctions(app, 'us-central1');
-            const endCall = httpsCallable<{ callId: string; reason: string }, EndCallResult>(functions, 'endCall');
-            await endCall({ callId, reason: 'declined' });
-          } catch (e: any) {
-            pushToast({
-              variant: 'destructive',
-              title: 'Decline failed',
-              description: e?.message || 'Could not decline the call.',
-            });
-          } finally {
-            busyCallIdRef.current = null;
-            setBusyCallId(null);
+          if (!data?.token || !data?.roomUrl) {
+            throw new Error('acceptCall did not return token/roomUrl');
           }
-        };
-        
-        const { id: toastId } = pushToast({
-          title: 'Incoming call',
-          description: `${callerName} is calling you.`,
-          duration: Infinity,
-          action: (
-            <div className="flex gap-2">
-              <Button size="sm" onClick={accept} disabled={!!busyCallIdRef.current}>Accept</Button>
-              <Button size="sm" variant="outline" onClick={decline} disabled={!!busyCallIdRef.current}>Decline</Button>
-            </div>
-          ),
-        });
 
-        incomingToastIdRef.current = toastId;
-        activeIncomingCallIdRef.current = callId;
-        watchCallDoc(callId);
-      }
+          sessionStorage.setItem(`dailyToken:${callId}`, data.token);
+          sessionStorage.setItem(`dailyRoomUrl:${callId}`, data.roomUrl);
+          router.push(`/call/${callId}`);
+          
+        } catch (e: any) {
+          pushToast({
+            variant: 'destructive',
+            title: 'Accept failed',
+            description: e.message || 'Could not accept the call.',
+          });
+        } finally {
+          busyCallIdRef.current = null;
+          setBusyCallId(null);
+        }
+      };
+
+      const decline = async () => {
+        if (busyCallIdRef.current) return;
+        busyCallIdRef.current = callId;
+        setBusyCallId(callId);
+        hideIncomingToast();
+
+        try {
+          const functions = getFunctions(app, 'us-central1');
+          const endCall = httpsCallable<{ callId: string; reason: string }, EndCallResult>(functions, 'endCall');
+          await endCall({ callId, reason: 'declined' });
+        } catch (e: any) {
+          pushToast({
+            variant: 'destructive',
+            title: 'Decline failed',
+            description: e?.message || 'Could not decline the call.',
+          });
+        } finally {
+          busyCallIdRef.current = null;
+          setBusyCallId(null);
+        }
+      };
+      
+      const { id: toastId } = pushToast({
+        title: 'Incoming call',
+        description: `${callerName} is calling you.`,
+        duration: Infinity,
+        action: (
+          <div className="flex gap-2">
+            <Button size="sm" onClick={accept} disabled={!!busyCallIdRef.current}>Accept</Button>
+            <Button size="sm" variant="outline" onClick={decline} disabled={!!busyCallIdRef.current}>Decline</Button>
+          </div>
+        ),
+      });
+
+      incomingToastIdRef.current = toastId;
+      activeIncomingCallIdRef.current = callId;
+      watchCallDoc(callId);
     }, (err) => {
       console.error('Call listener error:', err);
     });
