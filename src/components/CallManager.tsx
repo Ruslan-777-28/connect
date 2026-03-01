@@ -42,6 +42,7 @@ export function CallManager() {
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
   const busyCallIdRef = useRef<string | null>(null);
+  const [debugText, setDebugText] = useState('Initializing...');
   
   useEffect(() => {
     busyCallIdRef.current = busyCallId;
@@ -93,8 +94,6 @@ export function CallManager() {
     };
   }, []);
 
-  // Tracking for active accepted calls (for the bar)
-  // We use simpler queries to avoid composite index requirements
   const callerCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(collection(firestore, 'calls'), where('callerId', '==', user.uid));
@@ -128,26 +127,24 @@ export function CallManager() {
 
   useEffect(() => {
     if (!user?.uid || !firestore) {
+      setDebugText('No User/Auth');
       return;
     }
 
-    console.log("CALL LISTENER MOUNTED", user?.uid);
+    setDebugText(`Mounted: ${user.uid}`);
 
-    // SIMPLE QUERY: No status, no orderBy, no limits. Avoids composite indexes.
     const q = query(
       collection(firestore, 'calls'),
       where('receiverId', '==', user.uid)
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      console.log("CALL SNAPSHOT RECEIVED", snap.size);
+      setDebugText(`Mounted: ${user.uid} | Snap: ${snap.size}`);
 
       if (!initializedRef.current) {
         initializedRef.current = true;
-        // Skip processing initial snapshot if you want to only show "new" events
       }
 
-      // JS FILTERING & SORTING: Production-safe logic
       const ringingCalls = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as Call))
         .filter(d => d.status === 'ringing')
@@ -166,12 +163,10 @@ export function CallManager() {
 
       const callId = topRingingCall.id;
 
-      // Avoid duplicate toasts for the same call ID
       if (activeIncomingCallIdRef.current === callId && incomingToastIdRef.current) {
         return;
       }
 
-      // Hide old toast if we are switching to a newer call or if state changed
       hideIncomingToast();
 
       const callerName = topRingingCall.callerName || 'Someone';
@@ -260,10 +255,18 @@ export function CallManager() {
       watchCallDoc(callId);
     }, (err) => {
       console.error('Call listener error:', err);
+      setDebugText(`Error: ${err.message}`);
     });
 
     return () => unsub();
   }, [user?.uid, firestore, app, watchCallDoc, hideIncomingToast, router]);
 
-  return activeCallWithCaller ? <ActiveCallBar call={activeCallWithCaller} /> : null;
+  return (
+    <>
+      <div className="fixed top-2 right-2 bg-black text-white text-[10px] p-2 z-[100] rounded opacity-70 pointer-events-none font-mono">
+        {debugText}
+      </div>
+      {activeCallWithCaller ? <ActiveCallBar call={activeCallWithCaller} /> : null}
+    </>
+  );
 }
