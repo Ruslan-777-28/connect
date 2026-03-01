@@ -13,8 +13,6 @@ type StartCallResult = {
   offerId: string;
 };
 
-type EndCallResult = { ok: true; alreadyEnded?: true };
-
 export async function endCallClient(
   app: FirebaseApp,
   callId: string,
@@ -24,7 +22,7 @@ export async function endCallClient(
     const functions = getFunctions(app, 'us-central1');
     const endCall = httpsCallable<
       { callId: string; reason?: string },
-      EndCallResult
+      { ok: true; alreadyEnded?: true }
     >(functions, 'endCall');
     await endCall({ callId, reason });
   } catch (error) {
@@ -59,9 +57,14 @@ export async function startVideoCall(
 
     return { callId };
   } catch (error: any) {
-    if (error?.code === 'failed-precondition') {
-      throw new Error('FAILED_PRECONDITION');
+    // Standardize error codes based on server responses
+    if (error?.code === 'not-found' && error?.message === 'OFFER_NOT_FOUND') {
+      throw new Error('OFFER_NOT_FOUND');
     }
+    if (error?.code === 'failed-precondition' && error?.message === 'INSUFFICIENT_BALANCE') {
+      throw new Error('INSUFFICIENT_BALANCE');
+    }
+    
     throw error;
   }
 }

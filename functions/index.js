@@ -183,20 +183,14 @@ exports.startCall = onCall(
     // 1. Fetch and validate offer
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) {
-        throw new HttpsError("not-found", "Offer not found");
+        throw new HttpsError("not-found", "OFFER_NOT_FOUND");
     }
     const offer = offerSnap.data();
 
     if (offer.ownerId !== receiverId) {
-        throw new HttpsError("failed-precondition", "Offer does not belong to receiver");
+        throw new HttpsError("permission-denied", "Offer does not belong to receiver");
     }
-    if (offer.status !== "active") {
-        throw new HttpsError("failed-precondition", "Offer is not active");
-    }
-    if (offer.pricing.currency !== "COIN") {
-        throw new HttpsError("failed-precondition", "Invalid currency. Only COIN supported.");
-    }
-
+    
     // ✅ REQUIRED BALANCE (pre-call gate)
     const MIN_PREPAY_MINUTES = 1;
 
@@ -228,10 +222,7 @@ exports.startCall = onCall(
     const callerBalance = Number(callerSnap.data().balance || 0);
 
     if (callerBalance < requiredCoins) {
-      throw new HttpsError(
-        "failed-precondition", 
-        `Insufficient balance. Required: ${requiredCoins} COIN. You have: ${callerBalance} COIN`
-      );
+      throw new HttpsError("failed-precondition", "INSUFFICIENT_BALANCE");
     }
 
     // 2. Receiver availability check

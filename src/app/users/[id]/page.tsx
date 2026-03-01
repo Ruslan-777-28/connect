@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -95,31 +95,42 @@ export default function UserProfilePage() {
     if (isCalling) return;
 
     setIsCalling(true);
-    toast({
-      title: 'Starting call...',
-      description: `Calling ${userProfile.name}.`,
-    });
-
+    
     try {
       const { callId } = await startVideoCall(app, userProfile.id, offerId);
       router.push(`/call/${callId}`);
     } catch (error: any) {
       setIsCalling(false);
       
-      const description = error.message === 'FAILED_PRECONDITION' 
-        ? 'Недостатньо COIN для старту. Поповніть баланс у Aktive.' 
-        : (error.message || 'Could not initiate call.');
-        
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description,
-        action: error.message === 'FAILED_PRECONDITION' ? (
-          <ToastAction altText="Перейти в Aktive" onClick={() => router.push('/wallet')}>
-            Перейти в Aktive
-          </ToastAction>
-        ) : undefined,
-      });
+      if (error.message === 'INSUFFICIENT_BALANCE') {
+        toast({
+          variant: 'destructive',
+          title: 'Недостатньо COIN',
+          description: 'Поповніть баланс для здійснення дзвінків.',
+          action: (
+            <ToastAction altText="Поповнити" onClick={() => router.push('/wallet')}>
+              Поповнити
+            </ToastAction>
+          ),
+        });
+      } else if (error.message === 'OFFER_NOT_FOUND') {
+        toast({
+          variant: 'destructive',
+          title: 'Пропозицію оновлено',
+          description: 'Ця послуга більше не доступна в поточному вигляді. Будь ласка, оберіть актуальний варіант.',
+          action: (
+            <ToastAction altText="Оновити" onClick={() => window.location.reload()}>
+              <RefreshCw className="mr-2 h-4 w-4" /> Оновити
+            </ToastAction>
+          ),
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Помилка',
+          description: error.message || 'Не вдалося ініціювати виклик.',
+        });
+      }
     }
   };
 
@@ -261,7 +272,7 @@ export default function UserProfilePage() {
                         {offer.type === 'video' ? (
                           <>
                             <Phone className="mr-2 h-4 w-4" />
-                            {isCalling ? 'Starting...' : (online ? 'Виклик' : 'Недоступний')}
+                            {isCalling ? 'Починаємо...' : (online ? 'Виклик' : 'Недоступний')}
                           </>
                         ) : 'Замовити'}
                       </Button>
