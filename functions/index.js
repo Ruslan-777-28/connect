@@ -114,11 +114,6 @@ async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isO
   return token?.token;
 }
 
-/**
- * startCall
- * data: { receiverId: string, offerId: string }
- * returns: { callId, roomUrl, roomName, token, receiverId, offerId }
- */
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
@@ -135,7 +130,6 @@ exports.startCall = onCall(
       throw new HttpsError("not-found", "Receiver user profile not found");
     }
 
-    // Validate availability
     const availability = receiverSnap.get("availability");
     const isOnline = availability?.status === "online";
     let isExpired = false;
@@ -147,7 +141,6 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
     }
 
-    // Validate offer
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) {
         throw new HttpsError("not-found", "Offer not found");
@@ -259,16 +252,14 @@ exports.acceptCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for receiver");
     }
 
+    // Update status and init presence fields in one go
     await callRef.update({
       status: "accepted",
       acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    await callRef.update({
-        activeCount: 0,
-        participants: {},
-        lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
+      activeCount: 0,
+      participants: {},
+      lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     return {
