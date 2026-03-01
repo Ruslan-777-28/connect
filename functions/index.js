@@ -191,6 +191,7 @@ exports.startCall = onCall(
       roomName,
       roomUrl,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtTs: nowTs, // Deterministic timestamp for UI sorting
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt,
       offerId,
@@ -252,7 +253,6 @@ exports.acceptCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for receiver");
     }
 
-    // Update status and init presence fields in one go
     await callRef.update({
       status: "accepted",
       acceptedAt: admin.firestore.FieldValue.serverTimestamp(),

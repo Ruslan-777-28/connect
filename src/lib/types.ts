@@ -37,6 +37,7 @@ export type Call = {
   roomUrl: string;
   roomName: string;
   createdAt: Timestamp;
+  createdAtTs?: Timestamp;
   updatedAt: Timestamp;
   acceptedAt?: Timestamp | null;
   endedAt?: Timestamp | null;

@@ -131,31 +131,29 @@ export function CallManager() {
       return;
     }
 
-    setDebugText(`Mounted: ${user.uid}`);
-    console.log("CALL LISTENER MOUNTED", user.uid);
-
     const q = query(
       collection(firestore, 'calls'),
       where('receiverId', '==', user.uid)
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      setDebugText(`Mounted: ${user.uid} | Snap: ${snap.size}`);
-      console.log("CALL SNAPSHOT RECEIVED", snap.size);
+      const now = Date.now();
+      
+      const ringingCalls = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Call))
+        .filter(d => d.status === 'ringing')
+        .filter(d => !d.expiresAt || d.expiresAt.toMillis() > now)
+        .sort((a, b) => {
+            const timeA = a.expiresAt?.toMillis?.() || 0;
+            const timeB = b.expiresAt?.toMillis?.() || 0;
+            return timeB - timeA;
+        });
+
+      setDebugText(`Mounted: ${user.uid} | Snap: ${snap.size} | Ringing: ${ringingCalls.length}`);
 
       if (!initializedRef.current) {
         initializedRef.current = true;
       }
-
-      // Вибір "активного дзвінка" (статус ringing) за допомогою клієнтської фільтрації
-      const ringingCalls = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as Call))
-        .filter(d => d.status === 'ringing')
-        .sort((a, b) => {
-            const timeA = a.createdAt?.toMillis?.() || 0;
-            const timeB = b.createdAt?.toMillis?.() || 0;
-            return timeB - timeA;
-        });
 
       const topRingingCall = ringingCalls[0];
 
