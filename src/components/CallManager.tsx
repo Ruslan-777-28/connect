@@ -131,6 +131,8 @@ export function CallManager() {
       return;
     }
 
+    console.log("CALL LISTENER MOUNTED", user?.uid);
+
     // SIMPLE QUERY: No status, no orderBy, no limits. Avoids composite indexes.
     const q = query(
       collection(firestore, 'calls'),
@@ -138,6 +140,8 @@ export function CallManager() {
     );
 
     const unsub = onSnapshot(q, (snap) => {
+      console.log("CALL SNAPSHOT RECEIVED", snap.size);
+
       if (!initializedRef.current) {
         initializedRef.current = true;
         // Skip processing initial snapshot if you want to only show "new" events
