@@ -180,6 +180,7 @@ exports.startCall = onCall(
       throw new HttpsError("invalid-argument", "Cannot call yourself");
     }
 
+    // 1. Check receiver availability
     const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
     if (!receiverSnap.exists) {
       throw new HttpsError("not-found", "Receiver user profile not found");
@@ -196,6 +197,7 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
     }
 
+    // 2. Fetch and validate offer
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) {
         throw new HttpsError("not-found", "Offer not found");
@@ -208,18 +210,36 @@ exports.startCall = onCall(
     if (offer.status !== "active") {
         throw new HttpsError("failed-precondition", "Offer is not active");
     }
-    if (offer.type !== "video") {
-        throw new HttpsError("invalid-argument", "Offer type must be video for a video call");
-    }
     if (offer.pricing.currency !== "COIN") {
         throw new HttpsError("failed-precondition", "Invalid currency. Only COIN supported.");
     }
 
-    const ratePerMinute = Number(offer.pricing?.ratePerMinute ?? 0);
-    if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) {
-        throw new HttpsError("failed-precondition", "Invalid rate in offer");
+    // 3. Balance Check Gate
+    const MIN_PREPAY_MINUTES = 1;
+    let requiredCoins = 0;
+    
+    if (offer.type === "video") {
+      const rpm = Number(offer.pricing?.ratePerMinute ?? 0);
+      if (!Number.isFinite(rpm) || rpm <= 0) throw new HttpsError("failed-precondition", "Invalid rate in offer");
+      requiredCoins = rpm * MIN_PREPAY_MINUTES;
+    } else if (offer.type === "file") {
+      requiredCoins = Number(offer.pricing?.ratePerFile ?? 0);
+    } else if (offer.type === "text") {
+      requiredCoins = Number(offer.pricing?.ratePerQuestion ?? 0);
     }
 
+    const callerSnap = await admin.firestore().doc(`users/${callerId}`).get();
+    if (!callerSnap.exists) throw new HttpsError("not-found", "Caller not found");
+    const callerBalance = Number(callerSnap.data().balance || 0);
+
+    if (callerBalance < requiredCoins) {
+      throw new HttpsError(
+        "failed-precondition", 
+        `Insufficient balance. Required: ${requiredCoins} COIN. You have: ${callerBalance} COIN`
+      );
+    }
+
+    // 4. Create Room and Tokens
     const pricingSnapshot = {
       type: offer.type,
       categoryId: offer.categoryId || "",
@@ -232,7 +252,6 @@ exports.startCall = onCall(
     };
 
     const apiKey = DAILY_API_KEY.value();
-
     const { roomName, roomUrl } = await createDailyRoomPrivate(apiKey);
 
     const callerName = await getUserName(callerId);
@@ -247,6 +266,7 @@ exports.startCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
+    // 5. Finalize Call Document
     const callRef = admin.firestore().collection("calls").doc();
     const nowTs = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45_000);
@@ -264,7 +284,9 @@ exports.startCall = onCall(
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt,
       offerId,
-      pricingSnapshot
+      pricingSnapshot,
+      requiredCoins,
+      minPrepayMinutes: MIN_PREPAY_MINUTES
     });
 
     await admin.firestore().collection("dailyRooms").doc(roomName).set({

@@ -10,17 +10,17 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, ChevronRight, Phone } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
-import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   Carousel,
   CarouselContent,
   CarouselItem,
 } from "@/components/ui/carousel";
+import { ToastAction } from '@/components/ui/toast';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -104,6 +104,22 @@ export default function UserProfilePage() {
       const { callId } = await startVideoCall(app, userProfile.id, offerId);
       router.push(`/call/${callId}`);
     } catch (error: any) {
+      setIsCalling(false);
+      
+      if (error.message === 'INSUFFICIENT_BALANCE') {
+        toast({
+          variant: 'destructive',
+          title: 'Недостатньо COIN',
+          description: 'Поповніть баланс, щоб здійснити виклик.',
+          action: (
+            <ToastAction altText="Поповнити" onClick={() => router.push('/wallet')}>
+              Поповнити
+            </ToastAction>
+          ),
+        });
+        return;
+      }
+
       const description = error.message === 'USER_UNAVAILABLE' 
         ? 'Користувач зараз недоступний для дзвінків.' 
         : (error.message || 'Could not initiate call.');
@@ -113,7 +129,6 @@ export default function UserProfilePage() {
         title: 'Error',
         description,
       });
-      setIsCalling(false);
     }
   };
 

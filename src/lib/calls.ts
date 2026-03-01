@@ -60,6 +60,10 @@ export async function startVideoCall(
     return { callId };
   } catch (error: any) {
     if (error?.code === 'failed-precondition') {
+      const message = error.message?.toLowerCase() || '';
+      if (message.includes('insufficient balance')) {
+        throw new Error('INSUFFICIENT_BALANCE');
+      }
       throw new Error('USER_UNAVAILABLE');
     }
     throw error;
