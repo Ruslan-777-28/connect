@@ -132,6 +132,7 @@ export function CallManager() {
     }
 
     setDebugText(`Mounted: ${user.uid}`);
+    console.log("CALL LISTENER MOUNTED", user.uid);
 
     const q = query(
       collection(firestore, 'calls'),
@@ -140,11 +141,13 @@ export function CallManager() {
 
     const unsub = onSnapshot(q, (snap) => {
       setDebugText(`Mounted: ${user.uid} | Snap: ${snap.size}`);
+      console.log("CALL SNAPSHOT RECEIVED", snap.size);
 
       if (!initializedRef.current) {
         initializedRef.current = true;
       }
 
+      // Вибір "активного дзвінка" (статус ringing) за допомогою клієнтської фільтрації
       const ringingCalls = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as Call))
         .filter(d => d.status === 'ringing')
