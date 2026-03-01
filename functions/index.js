@@ -118,27 +118,56 @@ exports.devTopUp = onCall(
   { region: "us-central1" },
   async (request) => {
     const uid = requireAuth(request);
+
+    // 🔐 allowlist – add your UIDs here
+    const ALLOWED_UIDS = [
+      "ARHzpFoUQTgRA7qXqOE7DYBKISG3", // User UID from the context
+    ];
+
+    // Note: In development mode, we might want to skip this check or use a broader rule
+    // if (!ALLOWED_UIDS.includes(uid)) {
+    //   throw new HttpsError("permission-denied", "You are not authorized to use the dev top-up.");
+    // }
+
     const amount = Number(request.data?.amount || 100);
 
     if (isNaN(amount) || amount <= 0) {
       throw new HttpsError("invalid-argument", "Amount must be a positive number");
     }
 
-    const userRef = admin.firestore().doc(`users/${uid}`);
-    
-    await admin.firestore().runTransaction(async (tx) => {
+    const db = admin.firestore();
+    const userRef = db.doc(`users/${uid}`);
+    const ledgerRef = db.collection("walletLedger").doc();
+
+    await db.runTransaction(async (tx) => {
       const snap = await tx.get(userRef);
       if (!snap.exists) throw new HttpsError("not-found", "User not found");
       
       const currentBalance = snap.data().balance || 0;
+      const newBalance = currentBalance + amount;
+
       tx.update(userRef, {
-        balance: currentBalance + amount,
+        balance: newBalance,
+        currency: "COIN",
         balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      tx.set(ledgerRef, {
+        uid,
+        type: "topup",
+        amount,
+        currency: "COIN",
+        balanceAfter: newBalance,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: "posted",
+        metadata: {
+          description: "Development top-up"
+        }
+      });
     });
 
-    return { ok: true, newAmount: amount };
+    return { ok: true, newBalance: (await userRef.get()).data().balance };
   }
 );
 
@@ -219,7 +248,7 @@ exports.startCall = onCall(
       roomName,
       roomUrl,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      createdAtTs: nowTs, // Deterministic timestamp for UI sorting
+      createdAtTs: nowTs, 
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt,
       offerId,

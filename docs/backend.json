@@ -80,6 +80,24 @@
         "balance"
       ]
     },
+    "WalletLedgerEntry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WalletLedgerEntry",
+      "type": "object",
+      "description": "Represents a single transaction in the wallet ledger.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string", "description": "The UID of the user this transaction belongs to." },
+        "type": { "type": "string", "enum": ["topup", "call_payment", "payout"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "default": "COIN" },
+        "balanceAfter": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["posted", "pending", "failed"] },
+        "metadata": { "type": "object", "description": "Optional additional info (e.g. callId)." }
+      },
+      "required": ["uid", "type", "amount", "balanceAfter", "createdAt", "status"]
+    },
     "Call": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Call",
@@ -236,6 +254,22 @@
             {
               "name": "offerId",
               "description": "The unique identifier for the offer."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/walletLedger/{entryId}",
+        "definition": {
+          "entityName": "WalletLedgerEntry",
+          "schema": {
+            "$ref": "#/backend/entities/WalletLedgerEntry"
+          },
+          "description": "Stores transaction history for users' wallets.",
+          "params": [
+            {
+              "name": "entryId",
+              "description": "The unique identifier for the ledger entry."
             }
           ]
         }

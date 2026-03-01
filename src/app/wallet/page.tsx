@@ -33,12 +33,14 @@ export default function WalletPage() {
     try {
       const functions = getFunctions(app, 'us-central1');
       const devTopUp = httpsCallable(functions, 'devTopUp');
-      await devTopUp({ amount: 100 });
+      const result: any = await devTopUp({ amount: 100 });
       
-      toast({
-        title: 'Успіх!',
-        description: 'Ваш баланс поповнено на 100 COIN.',
-      });
+      if (result.data?.ok) {
+        toast({
+          title: 'Успіх!',
+          description: 'Ваш баланс поповнено на 100 COIN.',
+        });
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',

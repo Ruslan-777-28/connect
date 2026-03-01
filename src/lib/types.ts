@@ -20,6 +20,21 @@ export type UserProfile = {
   availability?: Availability;
 };
 
+export type WalletLedgerEntry = {
+  id: string;
+  uid: string;
+  type: 'topup' | 'call_payment' | 'payout';
+  amount: number;
+  currency: string;
+  balanceAfter: number;
+  createdAt: Timestamp | any;
+  status: 'posted' | 'pending' | 'failed';
+  metadata?: {
+    callId?: string;
+    description?: string;
+  };
+};
+
 export type PricingSnapshot = {
   type: 'video' | 'file' | 'text';
   categoryId: string;

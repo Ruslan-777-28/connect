@@ -47,6 +47,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- Wallet Ledger ----------
+    match /walletLedger/{entryId} {
+      // Users can only read their own transaction history. No client writes allowed.
+      allow read: if isSignedIn() && isOwner(resource.data.uid);
+      allow write: if false;
+    }
+
     // ---------- Calls (1:1 video) ----------
     match /calls/{callId} {
       allow read: if isCallParticipant();
