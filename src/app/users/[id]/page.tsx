@@ -106,20 +106,6 @@ export default function UserProfilePage() {
     } catch (error: any) {
       setIsCalling(false);
       
-      if (error.message === 'INSUFFICIENT_BALANCE') {
-        toast({
-          variant: 'destructive',
-          title: 'Недостатньо COIN',
-          description: 'Поповніть баланс, щоб здійснити виклик.',
-          action: (
-            <ToastAction altText="Поповнити" onClick={() => router.push('/wallet')}>
-              Поповнити
-            </ToastAction>
-          ),
-        });
-        return;
-      }
-
       const description = error.message === 'FAILED_PRECONDITION' 
         ? 'Недостатньо COIN для старту. Поповніть баланс у Aktive.' 
         : (error.message || 'Could not initiate call.');

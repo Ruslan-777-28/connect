@@ -59,12 +59,7 @@ export async function startVideoCall(
 
     return { callId };
   } catch (error: any) {
-    // Firebase Functions errors often have `code`
     if (error?.code === 'failed-precondition') {
-      const message = error.message?.toLowerCase() || '';
-      if (message.includes('insufficient balance')) {
-        throw new Error('INSUFFICIENT_BALANCE');
-      }
       throw new Error('FAILED_PRECONDITION');
     }
     throw error;

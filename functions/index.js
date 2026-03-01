@@ -197,7 +197,7 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "Invalid currency. Only COIN supported.");
     }
 
-    // 2. REQUIRED BALANCE (pre-call gate)
+    // ✅ REQUIRED BALANCE (pre-call gate)
     const MIN_PREPAY_MINUTES = 1;
 
     function calcRequiredCoins(offerData) {
@@ -222,6 +222,7 @@ exports.startCall = onCall(
 
     const requiredCoins = calcRequiredCoins(offer);
 
+    // Read caller profile + balance
     const callerSnap = await admin.firestore().doc(`users/${callerId}`).get();
     if (!callerSnap.exists) throw new HttpsError("not-found", "Caller profile not found");
     const callerBalance = Number(callerSnap.data().balance || 0);
@@ -233,7 +234,7 @@ exports.startCall = onCall(
       );
     }
 
-    // 3. Receiver availability check
+    // 2. Receiver availability check
     const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
     if (!receiverSnap.exists) {
       throw new HttpsError("not-found", "Receiver user profile not found");
@@ -250,7 +251,7 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
     }
 
-    // 4. Create Room and Tokens
+    // 3. Create Room and Tokens
     const pricingSnapshot = {
       type: offer.type,
       categoryId: offer.categoryId || "",
@@ -277,7 +278,7 @@ exports.startCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
-    // 5. Finalize Call Document
+    // 4. Finalize Call Document
     const callRef = admin.firestore().collection("calls").doc();
     const nowTs = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45_000);
