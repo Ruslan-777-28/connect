@@ -120,14 +120,19 @@ export default function UserProfilePage() {
         return;
       }
 
-      const description = error.message === 'USER_UNAVAILABLE' 
-        ? 'Користувач зараз недоступний для дзвінків.' 
+      const description = error.message === 'FAILED_PRECONDITION' 
+        ? 'Недостатньо COIN для старту. Поповніть баланс у Aktive.' 
         : (error.message || 'Could not initiate call.');
         
       toast({
         variant: 'destructive',
         title: 'Error',
         description,
+        action: error.message === 'FAILED_PRECONDITION' ? (
+          <ToastAction altText="Перейти в Aktive" onClick={() => router.push('/wallet')}>
+            Перейти в Aktive
+          </ToastAction>
+        ) : undefined,
       });
     }
   };

@@ -180,24 +180,7 @@ exports.startCall = onCall(
       throw new HttpsError("invalid-argument", "Cannot call yourself");
     }
 
-    // 1. Check receiver availability
-    const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
-    if (!receiverSnap.exists) {
-      throw new HttpsError("not-found", "Receiver user profile not found");
-    }
-
-    const availability = receiverSnap.get("availability");
-    const isOnline = availability?.status === "online";
-    let isExpired = false;
-    if (availability?.until) {
-        isExpired = availability.until.toMillis() < Date.now();
-    }
-
-    if (!isOnline || isExpired) {
-        throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
-    }
-
-    // 2. Fetch and validate offer
+    // 1. Fetch and validate offer
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) {
         throw new HttpsError("not-found", "Offer not found");
@@ -214,22 +197,33 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "Invalid currency. Only COIN supported.");
     }
 
-    // 3. Balance Check Gate
+    // 2. REQUIRED BALANCE (pre-call gate)
     const MIN_PREPAY_MINUTES = 1;
-    let requiredCoins = 0;
-    
-    if (offer.type === "video") {
-      const rpm = Number(offer.pricing?.ratePerMinute ?? 0);
-      if (!Number.isFinite(rpm) || rpm <= 0) throw new HttpsError("failed-precondition", "Invalid rate in offer");
-      requiredCoins = rpm * MIN_PREPAY_MINUTES;
-    } else if (offer.type === "file") {
-      requiredCoins = Number(offer.pricing?.ratePerFile ?? 0);
-    } else if (offer.type === "text") {
-      requiredCoins = Number(offer.pricing?.ratePerQuestion ?? 0);
+
+    function calcRequiredCoins(offerData) {
+      const type = offerData.type;
+      if (type === "video") {
+        const rpm = Number(offerData.pricing?.ratePerMinute ?? 0);
+        if (!Number.isFinite(rpm) || rpm <= 0) throw new HttpsError("failed-precondition", "Invalid ratePerMinute");
+        return rpm * MIN_PREPAY_MINUTES;
+      }
+      if (type === "file") {
+        const rpf = Number(offerData.pricing?.ratePerFile ?? 0);
+        if (!Number.isFinite(rpf) || rpf <= 0) throw new HttpsError("failed-precondition", "Invalid ratePerFile");
+        return rpf;
+      }
+      if (type === "text") {
+        const rpq = Number(offerData.pricing?.ratePerQuestion ?? 0);
+        if (!Number.isFinite(rpq) || rpq <= 0) throw new HttpsError("failed-precondition", "Invalid ratePerQuestion");
+        return rpq;
+      }
+      throw new HttpsError("invalid-argument", "Unknown offer type");
     }
 
+    const requiredCoins = calcRequiredCoins(offer);
+
     const callerSnap = await admin.firestore().doc(`users/${callerId}`).get();
-    if (!callerSnap.exists) throw new HttpsError("not-found", "Caller not found");
+    if (!callerSnap.exists) throw new HttpsError("not-found", "Caller profile not found");
     const callerBalance = Number(callerSnap.data().balance || 0);
 
     if (callerBalance < requiredCoins) {
@@ -237,6 +231,23 @@ exports.startCall = onCall(
         "failed-precondition", 
         `Insufficient balance. Required: ${requiredCoins} COIN. You have: ${callerBalance} COIN`
       );
+    }
+
+    // 3. Receiver availability check
+    const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+    if (!receiverSnap.exists) {
+      throw new HttpsError("not-found", "Receiver user profile not found");
+    }
+
+    const availability = receiverSnap.get("availability");
+    const isOnline = availability?.status === "online";
+    let isExpired = false;
+    if (availability?.until) {
+        isExpired = availability.until.toMillis() < Date.now();
+    }
+
+    if (!isOnline || isExpired) {
+        throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
     }
 
     // 4. Create Room and Tokens
