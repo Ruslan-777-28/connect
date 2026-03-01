@@ -114,6 +114,34 @@ async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isO
   return token?.token;
 }
 
+exports.devTopUp = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const amount = Number(request.data?.amount || 100);
+
+    if (isNaN(amount) || amount <= 0) {
+      throw new HttpsError("invalid-argument", "Amount must be a positive number");
+    }
+
+    const userRef = admin.firestore().doc(`users/${uid}`);
+    
+    await admin.firestore().runTransaction(async (tx) => {
+      const snap = await tx.get(userRef);
+      if (!snap.exists) throw new HttpsError("not-found", "User not found");
+      
+      const currentBalance = snap.data().balance || 0;
+      tx.update(userRef, {
+        balance: currentBalance + amount,
+        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    return { ok: true, newAmount: amount };
+  }
+);
+
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {

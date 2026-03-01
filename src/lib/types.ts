@@ -13,8 +13,10 @@ export type UserProfile = {
   bio?: string;
   avatarUrl?: string;
   balance: number;
+  currency?: 'COIN' | string;
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
+  balanceUpdatedAt?: Timestamp | any;
   availability?: Availability;
 };
 

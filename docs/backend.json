@@ -34,6 +34,11 @@
           "description": "User's current wallet balance.",
           "default": 0
         },
+        "currency": {
+          "type": "string",
+          "description": "The currency used in the wallet.",
+          "default": "COIN"
+        },
         "createdAt": {
           "type": "string",
           "description": "Timestamp indicating when the user profile was created.",
@@ -42,6 +47,11 @@
         "updatedAt": {
           "type": "string",
           "description": "Timestamp indicating when the user profile was last updated.",
+          "format": "date-time"
+        },
+        "balanceUpdatedAt": {
+          "type": "string",
+          "description": "Timestamp indicating when the balance was last changed.",
           "format": "date-time"
         },
         "availability": {
