@@ -12,6 +12,7 @@ export type UserProfile = {
   email: string;
   bio?: string;
   avatarUrl?: string;
+  balance: number;
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
   availability?: Availability;

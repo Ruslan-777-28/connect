@@ -29,6 +29,11 @@
           "type": "string",
           "description": "User's biography or short description."
         },
+        "balance": {
+          "type": "number",
+          "description": "User's current wallet balance.",
+          "default": 0
+        },
         "createdAt": {
           "type": "string",
           "description": "Timestamp indicating when the user profile was created.",
@@ -61,7 +66,8 @@
         "id",
         "email",
         "name",
-        "createdAt"
+        "createdAt",
+        "balance"
       ]
     },
     "Call": {
@@ -122,6 +128,21 @@
         "receiverActingAs": {
             "type": "string",
             "enum": ["client", "pro"]
+        },
+        "offerId": {
+          "type": "string",
+          "description": "The ID of the communication offer used for this call."
+        },
+        "pricingSnapshot": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string" },
+            "categoryId": { "type": "string" },
+            "subcategoryId": { "type": "string" },
+            "currency": { "type": "string" },
+            "ratePerMinute": { "type": "number" },
+            "capturedAt": { "type": "string", "format": "date-time" }
+          }
         }
       },
       "required": ["callerId", "receiverId", "status", "createdAt", "updatedAt", "roomName", "roomUrl"]
