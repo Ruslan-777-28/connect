@@ -119,15 +119,13 @@ exports.devTopUp = onCall(
   async (request) => {
     const uid = requireAuth(request);
 
-    // 🔐 allowlist – add your UIDs here
     const ALLOWED_UIDS = [
-      "ARHzpFoUQTgRA7qXqOE7DYBKISG3", // User UID from the context
+      "ARHzpFoUQTgRA7qXqOE7DYBKISG3",
     ];
 
-    // Note: In development mode, we might want to skip this check or use a broader rule
-    // if (!ALLOWED_UIDS.includes(uid)) {
-    //   throw new HttpsError("permission-denied", "You are not authorized to use the dev top-up.");
-    // }
+    if (!ALLOWED_UIDS.includes(uid)) {
+      throw new HttpsError("permission-denied", "You are not authorized to use the dev top-up.");
+    }
 
     const amount = Number(request.data?.amount || 100);
 
@@ -167,7 +165,7 @@ exports.devTopUp = onCall(
       });
     });
 
-    return { ok: true, newBalance: (await userRef.get()).data().balance };
+    return { ok: true };
   }
 );
 
@@ -213,11 +211,25 @@ exports.startCall = onCall(
     if (offer.type !== "video") {
         throw new HttpsError("invalid-argument", "Offer type must be video for a video call");
     }
+    if (offer.pricing.currency !== "COIN") {
+        throw new HttpsError("failed-precondition", "Invalid currency. Only COIN supported.");
+    }
 
     const ratePerMinute = Number(offer.pricing?.ratePerMinute ?? 0);
     if (!Number.isFinite(ratePerMinute) || ratePerMinute <= 0) {
         throw new HttpsError("failed-precondition", "Invalid rate in offer");
     }
+
+    const pricingSnapshot = {
+      type: offer.type,
+      categoryId: offer.categoryId || "",
+      subcategoryId: offer.subcategoryId || "",
+      currency: "COIN",
+      ratePerMinute: offer.pricing.ratePerMinute || null,
+      ratePerFile: offer.pricing.ratePerFile || null,
+      ratePerQuestion: offer.pricing.ratePerQuestion || null,
+      capturedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
 
     const apiKey = DAILY_API_KEY.value();
 
@@ -252,14 +264,7 @@ exports.startCall = onCall(
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt,
       offerId,
-      pricingSnapshot: {
-        type: "video",
-        categoryId: offer.categoryId || "",
-        subcategoryId: offer.subcategoryId || "",
-        currency: offer.pricing.currency || "USD",
-        ratePerMinute,
-        capturedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }
+      pricingSnapshot
     });
 
     await admin.firestore().collection("dailyRooms").doc(roomName).set({

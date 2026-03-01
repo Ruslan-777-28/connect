@@ -98,9 +98,9 @@ export default function ProfilePage() {
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">{offer.categoryId} / {offer.subcategoryId}</p>
                     <div className="text-sm font-bold">
-                      {offer.pricing.ratePerMinute && `$${offer.pricing.ratePerMinute}/хв`}
-                      {offer.pricing.ratePerFile && `$${offer.pricing.ratePerFile}/файл`}
-                      {offer.pricing.ratePerQuestion && `$${offer.pricing.ratePerQuestion}/пит`}
+                      {offer.pricing.ratePerMinute && `${offer.pricing.ratePerMinute} COIN/хв`}
+                      {offer.pricing.ratePerFile && `${offer.pricing.ratePerFile} COIN/файл`}
+                      {offer.pricing.ratePerQuestion && `${offer.pricing.ratePerQuestion} COIN/пит`}
                     </div>
                   </CardContent>
                 </Card>

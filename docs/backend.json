@@ -8,55 +8,44 @@
       "description": "Represents a user's profile in the ConnectU application.",
       "properties": {
         "id": {
-          "type": "string",
-          "description": "Unique identifier for the UserProfile entity, matching the Firebase Auth UID."
+          "type": "string"
         },
         "email": {
           "type": "string",
-          "description": "User's email address.",
           "format": "email"
         },
         "name": {
-          "type": "string",
-          "description": "User's full name."
+          "type": "string"
         },
         "avatarUrl": {
           "type": "string",
-          "description": "URL of the user's profile picture.",
           "format": "uri"
         },
         "bio": {
-          "type": "string",
-          "description": "User's biography or short description."
+          "type": "string"
         },
         "balance": {
           "type": "number",
-          "description": "User's current wallet balance.",
           "default": 0
         },
         "currency": {
           "type": "string",
-          "description": "The currency used in the wallet.",
           "default": "COIN"
         },
         "createdAt": {
           "type": "string",
-          "description": "Timestamp indicating when the user profile was created.",
           "format": "date-time"
         },
         "updatedAt": {
           "type": "string",
-          "description": "Timestamp indicating when the user profile was last updated.",
           "format": "date-time"
         },
         "balanceUpdatedAt": {
           "type": "string",
-          "description": "Timestamp indicating when the balance was last changed.",
           "format": "date-time"
         },
         "availability": {
           "type": "object",
-          "description": "User's real-time availability status for instant calls.",
           "properties": {
             "status": {
               "type": "string",
@@ -87,14 +76,13 @@
       "description": "Represents a single transaction in the wallet ledger.",
       "properties": {
         "id": { "type": "string" },
-        "uid": { "type": "string", "description": "The UID of the user this transaction belongs to." },
+        "uid": { "type": "string" },
         "type": { "type": "string", "enum": ["topup", "call_payment", "payout"] },
         "amount": { "type": "number" },
         "currency": { "type": "string", "default": "COIN" },
         "balanceAfter": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "status": { "type": "string", "enum": ["posted", "pending", "failed"] },
-        "metadata": { "type": "object", "description": "Optional additional info (e.g. callId)." }
+        "status": { "type": "string", "enum": ["posted", "pending", "failed"] }
       },
       "required": ["uid", "type", "amount", "balanceAfter", "createdAt", "status"]
     },
@@ -104,71 +92,24 @@
       "type": "object",
       "description": "Represents a call between two users.",
       "properties": {
-        "callerId": {
-          "type": "string",
-          "description": "The UID of the user who initiated the call."
-        },
-        "callerName": {
-          "type": "string",
-          "description": "The display name of the user who initiated the call."
-        },
-        "receiverId": {
-          "type": "string",
-          "description": "The UID of the user who is being called."
-        },
-        "status": {
-          "type": "string",
-          "enum": ["ringing", "accepted", "ended", "declined", "missed", "expired"]
-        },
-        "roomUrl": {
-          "type": "string",
-          "description": "URL for the video/audio call room."
-        },
-        "roomName": {
-          "type": "string",
-          "description": "Name of the video/audio call room."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "acceptedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "endedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "expiresAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Timestamp indicating when the ringing call expires and should be considered missed."
-        },
-        "callerActingAs": {
-            "type": "string",
-            "enum": ["client", "pro"]
-        },
-        "receiverActingAs": {
-            "type": "string",
-            "enum": ["client", "pro"]
-        },
-        "offerId": {
-          "type": "string",
-          "description": "The ID of the communication offer used for this call."
-        },
+        "callerId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ringing", "accepted", "ended", "declined", "missed", "expired"] },
+        "roomUrl": { "type": "string" },
+        "roomName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "offerId": { "type": "string" },
         "pricingSnapshot": {
           "type": "object",
           "properties": {
             "type": { "type": "string" },
             "categoryId": { "type": "string" },
             "subcategoryId": { "type": "string" },
-            "currency": { "type": "string" },
+            "currency": { "type": "string", "default": "COIN" },
             "ratePerMinute": { "type": "number" },
+            "ratePerFile": { "type": "number" },
+            "ratePerQuestion": { "type": "number" },
             "capturedAt": { "type": "string", "format": "date-time" }
           }
         }
@@ -181,18 +122,17 @@
       "type": "object",
       "description": "A proposal for communication services offered by a user, including pricing details.",
       "properties": {
-        "ownerId": { "type": "string", "description": "The UID of the user offering the service." },
-        "type": { "type": "string", "enum": ["video", "file", "text"], "description": "The communication format: video chat, file delivery, or text Q&A." },
+        "ownerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "file", "text"] },
         "categoryId": { "type": "string" },
         "subcategoryId": { "type": "string" },
         "pricing": {
           "type": "object",
-          "description": "Pricing configuration based on the offer type.",
           "properties": {
-            "ratePerMinute": { "type": "number", "description": "Cost per minute for video calls." },
-            "ratePerFile": { "type": "number", "description": "Cost per file shared." },
-            "ratePerQuestion": { "type": "number", "description": "Cost per individual question answered." },
-            "currency": { "type": "string", "default": "USD" }
+            "ratePerMinute": { "type": "number" },
+            "ratePerFile": { "type": "number" },
+            "ratePerQuestion": { "type": "number" },
+            "currency": { "type": "string", "default": "COIN" }
           }
         },
         "status": { "type": "string", "enum": ["active", "inactive"] },
@@ -214,64 +154,32 @@
         "path": "/users/{userId}",
         "definition": {
           "entityName": "UserProfile",
-          "schema": {
-            "$ref": "#/backend/entities/UserProfile"
-          },
-          "description": "Stores user profile information.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user."
-            }
-          ]
+          "schema": { "$ref": "#/backend/entities/UserProfile" },
+          "description": "Stores user profile information."
         }
       },
       {
         "path": "/calls/{callId}",
         "definition": {
           "entityName": "Call",
-          "schema": {
-            "$ref": "#/backend/entities/Call"
-          },
-          "description": "Stores information about calls between users.",
-          "params": [
-            {
-              "name": "callId",
-              "description": "The unique identifier for the call."
-            }
-          ]
+          "schema": { "$ref": "#/backend/entities/Call" },
+          "description": "Stores information about calls between users."
         }
       },
       {
         "path": "/communicationOffers/{offerId}",
         "definition": {
           "entityName": "CommunicationOffer",
-          "schema": {
-            "$ref": "#/backend/entities/CommunicationOffer"
-          },
-          "description": "Stores communication service proposals and their respective prices.",
-          "params": [
-            {
-              "name": "offerId",
-              "description": "The unique identifier for the offer."
-            }
-          ]
+          "schema": { "$ref": "#/backend/entities/CommunicationOffer" },
+          "description": "Stores communication service proposals."
         }
       },
       {
         "path": "/walletLedger/{entryId}",
         "definition": {
           "entityName": "WalletLedgerEntry",
-          "schema": {
-            "$ref": "#/backend/entities/WalletLedgerEntry"
-          },
-          "description": "Stores transaction history for users' wallets.",
-          "params": [
-            {
-              "name": "entryId",
-              "description": "The unique identifier for the ledger entry."
-            }
-          ]
+          "schema": { "$ref": "#/backend/entities/WalletLedgerEntry" },
+          "description": "Stores transaction history."
         }
       }
     ]

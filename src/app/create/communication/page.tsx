@@ -58,10 +58,10 @@ export default function CreateCommunicationOfferPage() {
 
   const priceLabel = useMemo(() => {
     switch(type) {
-      case 'video': return 'Вартість 1 хвилини ($)';
-      case 'file': return 'Вартість 1 файлу ($)';
-      case 'text': return 'Вартість 1 питання ($)';
-      default: return 'Вартість ($)';
+      case 'video': return 'Вартість 1 хвилини (COIN)';
+      case 'file': return 'Вартість 1 файлу (COIN)';
+      case 'text': return 'Вартість 1 питання (COIN)';
+      default: return 'Вартість (COIN)';
     }
   }, [type]);
 
@@ -79,7 +79,7 @@ export default function CreateCommunicationOfferPage() {
 
     setIsSaving(true);
     
-    const pricing: any = { currency: 'USD' };
+    const pricing: any = { currency: 'COIN' };
     if (type === 'video') pricing.ratePerMinute = priceNum;
     if (type === 'file') pricing.ratePerFile = priceNum;
     if (type === 'text') pricing.ratePerQuestion = priceNum;

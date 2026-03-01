@@ -32,7 +32,6 @@ export default function UserProfilePage() {
   const { user: currentUser } = useUser();
   const [isCalling, setIsCalling] = useState(false);
 
-  // States for offer browser
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
 
@@ -52,7 +51,6 @@ export default function UserProfilePage() {
 
   const online = isInstantOnline(userProfile?.availability);
 
-  // Derived data for the browser
   const categories = useMemo(() => {
     if (!offers) return [];
     const unique = Array.from(new Set(offers.map(o => o.categoryId)));
@@ -71,7 +69,6 @@ export default function UserProfilePage() {
     return offers.filter(o => o.categoryId === selectedCategory && o.subcategoryId === selectedSubcategory);
   }, [offers, selectedCategory, selectedSubcategory]);
 
-  // Initial selection
   useEffect(() => {
     if (categories.length > 0 && !selectedCategory) {
       setSelectedCategory(categories[0]);
@@ -180,7 +177,6 @@ export default function UserProfilePage() {
           </div>
         ) : offers && offers.length > 0 ? (
           <div className="space-y-8">
-            {/* Category Browser */}
             <div className="space-y-4">
               <Carousel className="w-full" opts={{ align: "start" }}>
                 <CarouselContent className="-ml-2">
@@ -198,7 +194,6 @@ export default function UserProfilePage() {
                 </CarouselContent>
               </Carousel>
 
-              {/* Subcategory Selector */}
               {subcategories.length > 0 && (
                 <div className="flex flex-wrap gap-2 pt-2 border-t">
                   {subcategories.map((sub) => (
@@ -219,7 +214,6 @@ export default function UserProfilePage() {
               )}
             </div>
 
-            {/* Offers Panel */}
             <div className="grid gap-4 sm:grid-cols-2">
               {filteredOffers.map((offer) => (
                 <Card key={offer.id} className="relative overflow-hidden transition-all hover:shadow-md border-primary/10">
@@ -239,9 +233,10 @@ export default function UserProfilePage() {
                         </div>
                         <div className="text-right">
                           <div className="text-lg font-bold">
-                             {offer.pricing.ratePerMinute && `$${offer.pricing.ratePerMinute}`}
-                             {offer.pricing.ratePerFile && `$${offer.pricing.ratePerFile}`}
-                             {offer.pricing.ratePerQuestion && `$${offer.pricing.ratePerQuestion}`}
+                             {offer.pricing.ratePerMinute && `${offer.pricing.ratePerMinute}`}
+                             {offer.pricing.ratePerFile && `${offer.pricing.ratePerFile}`}
+                             {offer.pricing.ratePerQuestion && `${offer.pricing.ratePerQuestion}`}
+                             <span className="ml-1 text-xs">COIN</span>
                           </div>
                           <span className="text-[10px] text-muted-foreground uppercase">
                              {offer.type === 'video' ? '/ хв' : offer.type === 'file' ? '/ файл' : '/ пит'}

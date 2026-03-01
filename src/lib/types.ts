@@ -39,10 +39,10 @@ export type PricingSnapshot = {
   type: 'video' | 'file' | 'text';
   categoryId: string;
   subcategoryId: string;
-  currency: string;
-  ratePerMinute?: number;
-  ratePerFile?: number;
-  ratePerQuestion?: number;
+  currency: 'COIN' | string;
+  ratePerMinute?: number | null;
+  ratePerFile?: number | null;
+  ratePerQuestion?: number | null;
   capturedAt: Timestamp | any;
 };
 
