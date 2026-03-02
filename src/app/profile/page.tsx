@@ -8,12 +8,15 @@ import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { UserProfile, CommunicationOffer } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Video, FileText, HelpCircle } from 'lucide-react';
+import { Video, FileText, HelpCircle, Edit2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { useRouter } from 'next/navigation';
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
+  const router = useRouter();
 
   const userDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'users', user.uid) : null),
@@ -97,10 +100,20 @@ export default function ProfilePage() {
                       </Badge>
                     </div>
                     <p className="text-xs text-muted-foreground mb-3">{offer.categoryId} / {offer.subcategoryId}</p>
-                    <div className="text-sm font-bold">
-                      {offer.pricing.ratePerMinute && `${offer.pricing.ratePerMinute} COIN/хв`}
-                      {offer.pricing.ratePerFile && `${offer.pricing.ratePerFile} COIN/файл`}
-                      {offer.pricing.ratePerQuestion && `${offer.pricing.ratePerQuestion} COIN/пит`}
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold">
+                        {offer.pricing.ratePerMinute && `${offer.pricing.ratePerMinute} COIN/хв`}
+                        {offer.pricing.ratePerFile && `${offer.pricing.ratePerFile} COIN/файл`}
+                        {offer.pricing.ratePerQuestion && `${offer.pricing.ratePerQuestion} COIN/пит`}
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="h-8 w-8 p-0"
+                        onClick={() => router.push(`/create/communication?type=${offer.type}&id=${offer.id}`)}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

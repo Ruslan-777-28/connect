@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, RefreshCw } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, RefreshCw, Edit2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -34,6 +34,8 @@ export default function UserProfilePage() {
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
+
+  const isOwner = currentUser?.uid === id;
 
   const userDocRef = useMemoFirebase(
     () => (id ? doc(firestore, 'users', id) : null),
@@ -261,21 +263,32 @@ export default function UserProfilePage() {
                         </div>
                       </div>
 
-                      <Button 
-                        className="w-full mt-auto" 
-                        variant={offer.type === 'video' ? "default" : "secondary"}
-                        disabled={offer.type === 'video' ? (isCalling || !online) : false}
-                        onClick={() => {
-                          if (offer.type === 'video') handleCallClick(offer.id);
-                        }}
-                      >
-                        {offer.type === 'video' ? (
-                          <>
-                            <Phone className="mr-2 h-4 w-4" />
-                            {isCalling ? 'Починаємо...' : (online ? 'Виклик' : 'Недоступний')}
-                          </>
-                        ) : 'Замовити'}
-                      </Button>
+                      {isOwner ? (
+                        <Button 
+                          className="w-full mt-auto" 
+                          variant="outline"
+                          onClick={() => router.push(`/create/communication?type=${offer.type}&id=${offer.id}`)}
+                        >
+                          <Edit2 className="mr-2 h-4 w-4" />
+                          Редагувати
+                        </Button>
+                      ) : (
+                        <Button 
+                          className="w-full mt-auto" 
+                          variant={offer.type === 'video' ? "default" : "secondary"}
+                          disabled={offer.type === 'video' ? (isCalling || !online) : false}
+                          onClick={() => {
+                            if (offer.type === 'video') handleCallClick(offer.id);
+                          }}
+                        >
+                          {offer.type === 'video' ? (
+                            <>
+                              <Phone className="mr-2 h-4 w-4" />
+                              {isCalling ? 'Починаємо...' : (online ? 'Виклик' : 'Недоступний')}
+                            </>
+                          ) : 'Замовити'}
+                        </Button>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

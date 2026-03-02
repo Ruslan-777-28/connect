@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { collection, serverTimestamp, doc } from 'firebase/firestore';
-import { useFirestore, useUser, addDocumentNonBlocking } from '@/firebase';
+import { collection, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { useFirestore, useUser, addDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,8 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft } from 'lucide-react';
+import { Loader2, ArrowLeft, Trash2 } from 'lucide-react';
+import type { CommunicationOffer } from '@/lib/types';
 
 const categories = [
   { 
@@ -44,17 +45,53 @@ export default function CreateCommunicationOfferPage() {
   const firestore = useFirestore();
   const { user } = useUser();
 
-  const type = (params.get('type') as 'video' | 'file' | 'text' | null) ?? 'video';
+  const editId = params.get('id');
+  const typeParam = params.get('type') as 'video' | 'file' | 'text' | null;
 
+  const [type, setType] = useState<'video' | 'file' | 'text'>(typeParam ?? 'video');
   const [categoryId, setCategoryId] = useState(categories[0].id);
+  const [subcategoryId, setSubcategoryId] = useState('');
+  const [price, setPrice] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(!!editId);
+
   const subOptions = useMemo(
     () => categories.find(c => c.id === categoryId)?.subs ?? [],
     [categoryId]
   );
-  const [subcategoryId, setSubcategoryId] = useState(subOptions[0]?.id ?? '');
 
-  const [price, setPrice] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  useEffect(() => {
+    if (subOptions.length > 0 && !subcategoryId) {
+      setSubcategoryId(subOptions[0].id);
+    }
+  }, [subOptions, subcategoryId]);
+
+  // Load existing offer if editing
+  useEffect(() => {
+    async function loadOffer() {
+      if (!editId || !firestore) return;
+      try {
+        const snap = await getDoc(doc(firestore, 'communicationOffers', editId));
+        if (snap.exists()) {
+          const data = snap.data() as CommunicationOffer;
+          setType(data.type);
+          setCategoryId(data.categoryId);
+          setSubcategoryId(data.subcategoryId);
+          
+          let p = '';
+          if (data.type === 'video') p = String(data.pricing.ratePerMinute || '');
+          if (data.type === 'file') p = String(data.pricing.ratePerFile || '');
+          if (data.type === 'text') p = String(data.pricing.ratePerQuestion || '');
+          setPrice(p);
+        }
+      } catch (e) {
+        console.error('Error loading offer:', e);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadOffer();
+  }, [editId, firestore]);
 
   const priceLabel = useMemo(() => {
     switch(type) {
@@ -67,7 +104,7 @@ export default function CreateCommunicationOfferPage() {
 
   async function onSubmit() {
     if (!user) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Ви повинні увійти, щоб створити пропозицію.' });
+      toast({ variant: 'destructive', title: 'Error', description: 'Ви повинні увійти, щоб зберегти пропозицію.' });
       return;
     }
 
@@ -91,14 +128,23 @@ export default function CreateCommunicationOfferPage() {
       subcategoryId,
       pricing,
       status: 'active',
-      createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
 
     try {
-      await addDocumentNonBlocking(collection(firestore, 'communicationOffers'), offerData);
-      toast({ title: 'Success', description: 'Пропозицію успішно створено!' });
-      router.push('/');
+      if (editId) {
+        setDocumentNonBlocking(doc(firestore, 'communicationOffers', editId), {
+          ...offerData,
+        }, { merge: true });
+        toast({ title: 'Оновлено', description: 'Зміни збережено!' });
+      } else {
+        await addDocumentNonBlocking(collection(firestore, 'communicationOffers'), {
+          ...offerData,
+          createdAt: serverTimestamp(),
+        });
+        toast({ title: 'Success', description: 'Пропозицію успішно створено!' });
+      }
+      router.push('/profile');
     } catch (e) {
       // Error is handled by global emitter
     } finally {
@@ -106,19 +152,55 @@ export default function CreateCommunicationOfferPage() {
     }
   }
 
+  async function onDelete() {
+    if (!editId || !confirm('Ви впевнені, що хочете видалити цю пропозицію?')) return;
+    
+    setIsSaving(true);
+    try {
+      deleteDocumentNonBlocking(doc(firestore, 'communicationOffers', editId));
+      toast({ title: 'Видалено', description: 'Пропозицію було видалено.' });
+      router.push('/profile');
+    } catch (e) {
+      setIsSaving(false);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto max-w-2xl p-4 py-8 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Завантаження даних...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto max-w-2xl p-4 py-8">
-      <Button 
-        variant="ghost" 
-        className="mb-4 -ml-2 text-muted-foreground"
-        onClick={() => router.back()}
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Назад
-      </Button>
+      <div className="flex items-center justify-between mb-8">
+        <Button 
+          variant="ghost" 
+          className="-ml-2 text-muted-foreground"
+          onClick={() => router.back()}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Назад
+        </Button>
+
+        {editId && (
+          <Button 
+            variant="ghost" 
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={onDelete}
+            disabled={isSaving}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Видалити
+          </Button>
+        )}
+      </div>
 
       <h1 className="mb-8 text-2xl font-bold capitalize">
-        Налаштування: {type}
+        {editId ? 'Редагування' : 'Налаштування'}: {type}
       </h1>
 
       <div className="space-y-6">
@@ -174,7 +256,7 @@ export default function CreateCommunicationOfferPage() {
               Збереження...
             </>
           ) : (
-            'Створити пропозицію'
+            editId ? 'Оновити пропозицію' : 'Створити пропозицію'
           )}
         </Button>
       </div>
