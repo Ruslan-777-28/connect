@@ -11,6 +11,62 @@ admin.initializeApp();
 const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 const DAILY_WEBHOOK_HMAC = defineSecret("DAILY_WEBHOOK_HMAC");
 
+// --- Billing Constants & Helpers ---
+const BILLING_TICK_SCHEDULE = "every 1 minutes"; // Minimum interval for Cloud Scheduler
+const MAX_ACCEPTED_SCAN = 200;
+const COIN_CURRENCY = "COIN";
+
+function ceilMinutesByRule(elapsedSeconds) {
+  if (elapsedSeconds >= 1) return Math.ceil(elapsedSeconds / 60);
+  return 0;
+}
+
+function tsNow() {
+  return admin.firestore.Timestamp.now();
+}
+
+/**
+ * Transfer COIN between two users + ledger entries.
+ * Use ONLY inside a transaction.
+ */
+function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, metadata }) {
+  const now = tsNow().toMillis();
+  const debitRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_debit`);
+  const creditRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_credit`);
+
+  tx.set(debitRef, {
+    uid: fromUid,
+    type: "call_payment",
+    amount: -Math.abs(amount),
+    currency: COIN_CURRENCY,
+    callId,
+    kind,
+    status: "posted",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    metadata: metadata || {},
+  });
+
+  tx.set(creditRef, {
+    uid: toUid,
+    type: "payout",
+    amount: Math.abs(amount),
+    currency: COIN_CURRENCY,
+    callId,
+    kind,
+    status: "posted",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    metadata: metadata || {},
+  });
+}
+
+function getVideoRateFromPricingSnapshot(call) {
+  const rpm = Number(call?.pricingSnapshot?.ratePerMinute ?? 0);
+  if (!Number.isFinite(rpm) || rpm <= 0) {
+    throw new HttpsError("failed-precondition", "Invalid ratePerMinute in pricingSnapshot");
+  }
+  return rpm;
+}
+
 function timingSafeEqualStr(a, b) {
   const ab = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -180,7 +236,6 @@ exports.startCall = onCall(
       throw new HttpsError("invalid-argument", "Cannot call yourself");
     }
 
-    // 1. Fetch and validate offer
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) {
         throw new HttpsError("not-found", "OFFER_NOT_FOUND");
@@ -191,7 +246,6 @@ exports.startCall = onCall(
         throw new HttpsError("permission-denied", "Offer does not belong to receiver");
     }
     
-    // ✅ REQUIRED BALANCE (pre-call gate)
     const MIN_PREPAY_MINUTES = 1;
 
     function calcRequiredCoins(offerData) {
@@ -216,7 +270,6 @@ exports.startCall = onCall(
 
     const requiredCoins = calcRequiredCoins(offer);
 
-    // Read caller profile + balance
     const callerSnap = await admin.firestore().doc(`users/${callerId}`).get();
     if (!callerSnap.exists) throw new HttpsError("not-found", "Caller profile not found");
     const callerBalance = Number(callerSnap.data().balance || 0);
@@ -225,7 +278,6 @@ exports.startCall = onCall(
       throw new HttpsError("failed-precondition", "INSUFFICIENT_BALANCE");
     }
 
-    // 2. Receiver availability check
     const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
     if (!receiverSnap.exists) {
       throw new HttpsError("not-found", "Receiver user profile not found");
@@ -242,7 +294,6 @@ exports.startCall = onCall(
         throw new HttpsError("failed-precondition", "User is currently unavailable for instant calls");
     }
 
-    // 3. Create Room and Tokens
     const pricingSnapshot = {
       type: offer.type,
       categoryId: offer.categoryId || "",
@@ -269,7 +320,6 @@ exports.startCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for caller");
     }
 
-    // 4. Finalize Call Document
     const callRef = admin.firestore().collection("calls").doc();
     const nowTs = admin.firestore.Timestamp.now();
     const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45_000);
@@ -340,13 +390,17 @@ exports.acceptCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for receiver");
     }
 
+    const nowTs = tsNow();
     await callRef.update({
       status: "accepted",
       acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      acceptedAtTs: nowTs,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       activeCount: 0,
       participants: {},
       lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
+      billedMinutes: 0,
+      billedCoins: 0,
     });
 
     return {
@@ -357,9 +411,6 @@ exports.acceptCall = onCall(
   }
 );
 
-/**
- * Завершує дзвінок. Викликається клієнтом.
- */
 exports.endCall = onCall(
   { region: "us-central1" },
   async (request) => {
@@ -384,7 +435,6 @@ exports.endCall = onCall(
         throw new HttpsError("permission-denied", "Not a call participant");
       }
 
-      // Якщо вже завершено, нічого не робимо
       if (call.status === "ended") {
         return { ok: true, alreadyEnded: true };
       }
@@ -392,6 +442,7 @@ exports.endCall = onCall(
       tx.update(callRef, {
         status: "ended",
         endedAt: admin.firestore.FieldValue.serverTimestamp(),
+        endedAtTs: tsNow(),
         endedBy: uid,
         endReason: reason || "ended",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -430,6 +481,7 @@ exports.cleanupMissedCalls = onSchedule(
         endReason: "missed",
         endedBy: "system",
         endedAt: admin.firestore.FieldValue.serverTimestamp(),
+        endedAtTs: tsNow(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
@@ -438,9 +490,114 @@ exports.cleanupMissedCalls = onSchedule(
   }
 );
 
-/**
- * Отримує події від Daily.co для оновлення стану учасників у кімнаті.
- */
+exports.billingTickAcceptedCalls = onSchedule(
+  { region: "us-central1", schedule: BILLING_TICK_SCHEDULE },
+  async () => {
+    const db = admin.firestore();
+    const now = tsNow();
+
+    const snap = await db
+      .collection("calls")
+      .where("status", "==", "accepted")
+      .limit(MAX_ACCEPTED_SCAN)
+      .get();
+
+    if (snap.empty) return;
+
+    for (const docSnap of snap.docs) {
+      const callId = docSnap.id;
+      const callRef = docSnap.ref;
+
+      try {
+        await db.runTransaction(async (tx) => {
+          const fresh = await tx.get(callRef);
+          if (!fresh.exists) return;
+
+          const call = fresh.data();
+          if (call.status !== "accepted") return;
+
+          if (call?.pricingSnapshot?.type !== "video") return;
+
+          const acceptedAtTs = call.acceptedAtTs;
+          if (!acceptedAtTs || typeof acceptedAtTs.toMillis !== "function") return;
+
+          const elapsedSeconds = Math.max(0, Math.floor((now.toMillis() - acceptedAtTs.toMillis()) / 1000));
+          const shouldMinutes = ceilMinutesByRule(elapsedSeconds);
+
+          const billedMinutes = Math.max(0, Number(call.billedMinutes || 0));
+          const dueMinutes = shouldMinutes - billedMinutes;
+          if (dueMinutes <= 0) return;
+
+          const ratePerMinute = getVideoRateFromPricingSnapshot(call);
+          const callerId = call.callerId;
+          const receiverId = call.receiverId;
+
+          const callerRef = db.doc(`users/${callerId}`);
+          const receiverRef = db.doc(`users/${receiverId}`);
+
+          const callerSnap = await tx.get(callerRef);
+          const receiverSnap = await tx.get(receiverRef);
+          if (!callerSnap.exists || !receiverSnap.exists) return;
+
+          const callerBal = Number(callerSnap.data().balance || 0);
+          const receiverBal = Number(receiverSnap.data().balance || 0);
+
+          const affordableMinutes = Math.floor(callerBal / ratePerMinute);
+          const minutesToBill = Math.min(dueMinutes, affordableMinutes);
+
+          if (minutesToBill > 0) {
+            const coins = minutesToBill * ratePerMinute;
+
+            applyCoinTransferTx(tx, {
+              db,
+              fromUid: callerId,
+              toUid: receiverId,
+              amount: coins,
+              callId,
+              kind: "call_minute",
+              metadata: { minutes: minutesToBill, ratePerMinute },
+            });
+
+            tx.update(callerRef, {
+              balance: callerBal - coins,
+              currency: COIN_CURRENCY,
+              balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            tx.update(receiverRef, {
+              balance: receiverBal + coins,
+              currency: COIN_CURRENCY,
+              balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            tx.update(callRef, {
+              billedMinutes: billedMinutes + minutesToBill,
+              billedCoins: Math.max(0, Number(call.billedCoins || 0)) + coins,
+              lastBilledAt: admin.firestore.FieldValue.serverTimestamp(),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
+          if (dueMinutes > minutesToBill) {
+            tx.update(callRef, {
+              status: "ended",
+              endReason: "insufficient_balance",
+              endedBy: "system",
+              endedAt: admin.firestore.FieldValue.serverTimestamp(),
+              endedAtTs: now,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+        });
+      } catch (e) {
+        logger.error("billingTickAcceptedCalls tx failed", { callId, e: String(e) });
+      }
+    }
+  }
+);
+
 exports.dailyWebhook = onRequest(
   { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
   async (req, res) => {
@@ -488,7 +645,6 @@ exports.dailyWebhook = onRequest(
         const call = callSnap.data();
         const status = call?.status;
         
-        // Обробляємо події тільки для активних (accepted) дзвінків
         if (status !== "accepted") {
           tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "not-accepted", eventType });
           return;
@@ -519,12 +675,12 @@ exports.dailyWebhook = onRequest(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        // Якщо всі учасники вийшли, завершуємо дзвінок
         if (nextActive === 0 && eventType !== "participant.joined") {
           updates.status = "ended";
           updates.endReason = "left";
           updates.endedBy = "system";
           updates.endedAt = admin.firestore.FieldValue.serverTimestamp();
+          updates.endedAtTs = tsNow();
         }
 
         tx.update(callRef, updates);

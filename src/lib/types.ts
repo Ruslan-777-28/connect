@@ -23,15 +23,19 @@ export type UserProfile = {
 export type WalletLedgerEntry = {
   id: string;
   uid: string;
-  type: 'topup' | 'call_payment' | 'payout';
+  type: 'topup' | 'call_payment' | 'payout' | 'debit' | 'credit';
   amount: number;
   currency: string;
-  balanceAfter: number;
+  balanceAfter?: number;
   createdAt: Timestamp | any;
   status: 'posted' | 'pending' | 'failed';
+  callId?: string;
+  kind?: string;
   metadata?: {
     callId?: string;
     description?: string;
+    minutes?: number;
+    ratePerMinute?: number;
   };
 };
 
@@ -58,7 +62,9 @@ export type Call = {
   createdAtTs?: Timestamp;
   updatedAt: Timestamp;
   acceptedAt?: Timestamp | null;
+  acceptedAtTs?: Timestamp | null;
   endedAt?: Timestamp | null;
+  endedAtTs?: Timestamp | null;
   expiresAt?: Timestamp;
   caller?: UserProfile;
   callerActingAs?: 'client' | 'pro';
@@ -67,6 +73,9 @@ export type Call = {
   endedBy?: string | null;
   offerId?: string;
   pricingSnapshot?: PricingSnapshot;
+  billedMinutes?: number;
+  billedCoins?: number;
+  lastBilledAt?: Timestamp | null;
 };
 
 export type Pricing = {
