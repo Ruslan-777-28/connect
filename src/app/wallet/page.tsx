@@ -27,12 +27,19 @@ export default function WalletPage() {
   
   const { data: profile, isLoading } = useDoc<UserProfile>(userDocRef);
 
+  /**
+   * Обробник поповнення балансу.
+   * Викликає Cloud Function 'devTopUp', яка додає 100 COIN.
+   */
   const handleTopUp = async () => {
     if (!user) return;
     setIsTopUpLoading(true);
     try {
+      // Ініціалізація функцій з вказанням регіону (має збігатися з налаштуваннями на бекенді)
       const functions = getFunctions(app, 'us-central1');
       const devTopUp = httpsCallable(functions, 'devTopUp');
+      
+      // Виклик функції
       const result: any = await devTopUp({ amount: 100 });
       
       if (result.data?.ok) {
@@ -42,6 +49,7 @@ export default function WalletPage() {
         });
       }
     } catch (error: any) {
+      console.error('Top-up error:', error);
       toast({
         variant: 'destructive',
         title: 'Помилка',
