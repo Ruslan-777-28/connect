@@ -357,6 +357,9 @@ exports.acceptCall = onCall(
   }
 );
 
+/**
+ * Завершує дзвінок. Викликається клієнтом.
+ */
 exports.endCall = onCall(
   { region: "us-central1" },
   async (request) => {
@@ -381,6 +384,7 @@ exports.endCall = onCall(
         throw new HttpsError("permission-denied", "Not a call participant");
       }
 
+      // Якщо вже завершено, нічого не робимо
       if (call.status === "ended") {
         return { ok: true, alreadyEnded: true };
       }
@@ -434,6 +438,9 @@ exports.cleanupMissedCalls = onSchedule(
   }
 );
 
+/**
+ * Отримує події від Daily.co для оновлення стану учасників у кімнаті.
+ */
 exports.dailyWebhook = onRequest(
   { region: "us-central1", secrets: [DAILY_WEBHOOK_HMAC] },
   async (req, res) => {
@@ -480,6 +487,8 @@ exports.dailyWebhook = onRequest(
 
         const call = callSnap.data();
         const status = call?.status;
+        
+        // Обробляємо події тільки для активних (accepted) дзвінків
         if (status !== "accepted") {
           tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "not-accepted", eventType });
           return;
@@ -510,7 +519,8 @@ exports.dailyWebhook = onRequest(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        if (nextActive === 0) {
+        // Якщо всі учасники вийшли, завершуємо дзвінок
+        if (nextActive === 0 && eventType !== "participant.joined") {
           updates.status = "ended";
           updates.endReason = "left";
           updates.endedBy = "system";
