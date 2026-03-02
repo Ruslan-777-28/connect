@@ -691,5 +691,3 @@ exports.dailyWebhook = onRequest(
     }
   }
 );
-
-    
