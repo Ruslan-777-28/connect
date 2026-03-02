@@ -12,11 +12,12 @@ const DAILY_API_KEY = defineSecret("DAILY_API_KEY");
 const DAILY_WEBHOOK_HMAC = defineSecret("DAILY_WEBHOOK_HMAC");
 
 // --- Billing Constants & Helpers ---
-const BILLING_TICK_SCHEDULE = "every 1 minutes"; // Minimum interval for Cloud Scheduler
+const BILLING_TICK_SCHEDULE = "every 1 minutes"; 
 const MAX_ACCEPTED_SCAN = 200;
 const COIN_CURRENCY = "COIN";
 
 function ceilMinutesByRule(elapsedSeconds) {
+  // Правило: будь-яка активність більше 1 секунди тарифікується як хвилина
   if (elapsedSeconds >= 1) return Math.ceil(elapsedSeconds / 60);
   return 0;
 }
@@ -175,14 +176,7 @@ exports.devTopUp = onCall(
   async (request) => {
     const uid = requireAuth(request);
 
-    const ALLOWED_UIDS = [
-      "ARHzpFoUQTgRA7qXqOE7DYBKISG3",
-    ];
-
-    if (!ALLOWED_UIDS.includes(uid)) {
-      throw new HttpsError("permission-denied", "You are not authorized to use the dev top-up.");
-    }
-
+    // ВІДКРИТО ДЛЯ ВСІХ АВТОРИЗОВАНИХ КОРИСТУВАЧІВ ДЛЯ ТЕСТУВАННЯ
     const amount = Number(request.data?.amount || 100);
 
     if (isNaN(amount) || amount <= 0) {
