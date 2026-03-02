@@ -44,8 +44,13 @@ export default function UserProfilePage() {
 
   const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
   
+  // Отримуємо пропозиції іншого користувача через useCollection
   const offersQuery = useMemoFirebase(
-    () => (id ? query(collection(firestore, 'communicationOffers'), where('ownerId', '==', id), where('status', '==', 'active')) : null),
+    () => (id ? query(
+      collection(firestore, 'communicationOffers'), 
+      where('ownerId', '==', id), 
+      where('status', '==', 'active')
+    ) : null),
     [id, firestore]
   );
   

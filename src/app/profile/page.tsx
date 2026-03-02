@@ -25,6 +25,7 @@ export default function ProfilePage() {
   
   const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
 
+  // Отримуємо пропозиції поточного користувача через useCollection
   const offersQuery = useMemoFirebase(
     () => (user ? query(
       collection(firestore, 'communicationOffers'), 
