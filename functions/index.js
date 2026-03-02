@@ -468,7 +468,7 @@ exports.endCall = onCall(
               applyCoinTransferTx(tx, {
                 db, fromUid: call.callerId, toUid: call.receiverId,
                 amount: coins, callId, kind: "call_finalize",
-                metadata: { minutes: minutesToBill, ratePerMinute }
+                metadata: { minutes: minutesToBill, ratePerMinute, source: "endCall" }
               });
 
               tx.update(callerRef, { 
@@ -698,7 +698,7 @@ exports.dailyWebhook = onRequest(
         const call = callSnap.data();
         const status = call?.status;
         
-        if (status !== "accepted") {
+        if (status !== "accepted" && eventType !== "meeting.ended") {
           tx.set(evtRef, { createdAt: admin.firestore.FieldValue.serverTimestamp(), ignored: "not-accepted", eventType });
           return;
         }
@@ -728,12 +728,61 @@ exports.dailyWebhook = onRequest(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        if (nextActive === 0 && eventType !== "participant.joined") {
+        const now = tsNow();
+
+        // ✅ FINAL BILLING in Webhook when everyone leaves
+        if (nextActive === 0 && eventType !== "participant.joined" && status === "accepted") {
+          try {
+            if (call?.pricingSnapshot?.type === "video" && call.acceptedAtTs) {
+              const acceptedAtTs = call.acceptedAtTs;
+              const elapsedSeconds = Math.max(0, Math.floor((now.toMillis() - acceptedAtTs.toMillis()) / 1000));
+              const totalBillableMinutes = ceilMinutesByRule(elapsedSeconds);
+              const billedMinutes = Math.max(0, Number(call.billedMinutes || 0));
+              const dueMinutes = totalBillableMinutes - billedMinutes;
+
+              if (dueMinutes > 0) {
+                const ratePerMinute = getVideoRateFromPricingSnapshot(call);
+                const callerRef = db.doc(`users/${call.callerId}`);
+                const receiverRef = db.doc(`users/${call.receiverId}`);
+
+                const [callerSnap, receiverSnap] = await Promise.all([tx.get(callerRef), tx.get(receiverRef)]);
+
+                if (callerSnap.exists && receiverSnap.exists) {
+                  const callerBal = Number(callerSnap.data().balance || 0);
+                  const receiverBal = Number(receiverSnap.data().balance || 0);
+                  const affordableMinutes = Math.floor(callerBal / ratePerMinute);
+                  const minutesToBill = Math.min(dueMinutes, affordableMinutes);
+
+                  if (minutesToBill > 0) {
+                    const coins = minutesToBill * ratePerMinute;
+                    applyCoinTransferTx(tx, {
+                      db, fromUid: call.callerId, toUid: call.receiverId,
+                      amount: coins, callId, kind: "call_finalize",
+                      metadata: { minutes: minutesToBill, ratePerMinute, source: "dailyWebhook" }
+                    });
+
+                    tx.update(callerRef, { balance: callerBal - coins, balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp() });
+                    tx.update(receiverRef, { balance: receiverBal + coins, balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp() });
+                    
+                    updates.billedMinutes = billedMinutes + minutesToBill;
+                    updates.billedCoins = Math.max(0, Number(call.billedCoins || 0)) + coins;
+                  }
+                  if (dueMinutes > minutesToBill) {
+                    updates.endReason = "insufficient_balance";
+                    updates.endedBy = "system";
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            logger.error("dailyWebhook finalize billing failed", { callId, e: String(e) });
+          }
+
           updates.status = "ended";
-          updates.endReason = "left";
-          updates.endedBy = "system";
+          updates.endReason = updates.endReason || "left";
+          updates.endedBy = updates.endedBy || "system";
           updates.endedAt = admin.firestore.FieldValue.serverTimestamp();
-          updates.endedAtTs = tsNow();
+          updates.endedAtTs = now;
         }
 
         tx.update(callRef, updates);
