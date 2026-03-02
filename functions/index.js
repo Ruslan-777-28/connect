@@ -357,23 +357,125 @@ exports.acceptCall = onCall(
     const uid = requireAuth(request);
     const callId = assertString(request.data?.callId, "callId");
 
-    const callRef = admin.firestore().doc(`calls/${callId}`);
-    const snap = await callRef.get();
-    if (!snap.exists) throw new HttpsError("not-found", "Call not found");
+    const db = admin.firestore();
+    const callRef = db.doc(`calls/${callId}`);
 
-    const call = snap.data();
-    if (call.receiverId !== uid) {
-      throw new HttpsError("permission-denied", "Only receiver can accept this call");
-    }
-    if (call.status !== "ringing") {
-      throw new HttpsError("failed-precondition", `Call is not in ringing state (status=${call.status})`);
-    }
+    const result = await db.runTransaction(async (tx) => {
+      const callSnap = await tx.get(callRef);
+      if (!callSnap.exists) throw new HttpsError("not-found", "Call not found");
 
+      const call = callSnap.data();
+      if (call.receiverId !== uid) {
+        throw new HttpsError("permission-denied", "Only receiver can accept this call");
+      }
+      if (call.status !== "ringing") {
+        throw new HttpsError("failed-precondition", `Call is not in ringing state (status=${call.status})`);
+      }
+
+      // --- PREPAY calculation (server truth) ---
+      const pricing = call.pricingSnapshot || {};
+      const offerType = pricing.type;
+      const minPrepayMinutes = Number(call.minPrepayMinutes || 1);
+
+      let requiredCoins = 0;
+
+      if (offerType === "video") {
+        const rpm = Number(pricing.ratePerMinute ?? 0);
+        if (!Number.isFinite(rpm) || rpm <= 0) {
+          throw new HttpsError("failed-precondition", "Invalid ratePerMinute in pricingSnapshot");
+        }
+        requiredCoins = rpm * minPrepayMinutes;
+      } else if (offerType === "file") {
+        const rpf = Number(pricing.ratePerFile ?? 0);
+        if (!Number.isFinite(rpf) || rpf <= 0) {
+          throw new HttpsError("failed-precondition", "Invalid ratePerFile in pricingSnapshot");
+        }
+        requiredCoins = rpf;
+      } else if (offerType === "text") {
+        const rpq = Number(pricing.ratePerQuestion ?? 0);
+        if (!Number.isFinite(rpq) || rpq <= 0) {
+          throw new HttpsError("failed-precondition", "Invalid ratePerQuestion in pricingSnapshot");
+        }
+        requiredCoins = rpq;
+      } else {
+        throw new HttpsError("failed-precondition", "Unknown offer type in pricingSnapshot");
+      }
+
+      const callerRef = db.doc(`users/${call.callerId}`);
+      const receiverRef = db.doc(`users/${call.receiverId}`);
+
+      const [callerSnap, receiverSnap] = await Promise.all([tx.get(callerRef), tx.get(receiverRef)]);
+      if (!callerSnap.exists) throw new HttpsError("not-found", "Caller profile not found");
+      if (!receiverSnap.exists) throw new HttpsError("not-found", "Receiver profile not found");
+
+      const callerBal = Number(callerSnap.data().balance || 0);
+      const receiverBal = Number(receiverSnap.data().balance || 0);
+
+      if (callerBal < requiredCoins) {
+        // Якщо на момент accept вже не вистачає — закриваємо як insufficient_balance
+        tx.update(callRef, {
+          status: "ended",
+          endReason: "insufficient_balance",
+          endedBy: "system",
+          endedAt: admin.firestore.FieldValue.serverTimestamp(),
+          endedAtTs: tsNow(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        throw new HttpsError("failed-precondition", "INSUFFICIENT_BALANCE");
+      }
+
+      // --- Transfer coins (ledger + balances) ---
+      applyCoinTransferTx(tx, {
+        db,
+        fromUid: call.callerId,
+        toUid: call.receiverId,
+        amount: requiredCoins,
+        callId,
+        kind: "call_prepay",
+        metadata: offerType === "video"
+          ? { minutes: minPrepayMinutes, ratePerMinute: Number(pricing.ratePerMinute) }
+          : offerType === "file"
+            ? { ratePerFile: Number(pricing.ratePerFile) }
+            : { ratePerQuestion: Number(pricing.ratePerQuestion) }
+      });
+
+      tx.update(callerRef, {
+        balance: callerBal - requiredCoins,
+        currency: COIN_CURRENCY,
+        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      tx.update(receiverRef, {
+        balance: receiverBal + requiredCoins,
+        currency: COIN_CURRENCY,
+        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // --- Accept call state ---
+      const nowTs = tsNow();
+      tx.update(callRef, {
+        status: "accepted",
+        acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+        acceptedAtTs: nowTs,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        activeCount: 0,
+        participants: {},
+        lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
+        billedMinutes: offerType === "video" ? minPrepayMinutes : 0,
+        billedCoins: Number(call.billedCoins || 0) + requiredCoins,
+        lastBilledAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return { ok: true, roomName: call.roomName, roomUrl: call.roomUrl };
+    });
+
+    // token генеруємо ПІСЛЯ транзакції
     const apiKey = DAILY_API_KEY.value();
-
     const receiverName = await getUserName(uid);
     const receiverToken = await createDailyMeetingToken(apiKey, {
-      roomName: call.roomName,
+      roomName: result.roomName,
       userName: receiverName,
       userId: uid,
       isOwner: false,
@@ -383,22 +485,9 @@ exports.acceptCall = onCall(
       throw new HttpsError("internal", "Failed to create Daily meeting token for receiver");
     }
 
-    const nowTs = tsNow();
-    await callRef.update({
-      status: "accepted",
-      acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-      acceptedAtTs: nowTs,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      activeCount: 0,
-      participants: {},
-      lastPresenceAt: admin.firestore.FieldValue.serverTimestamp(),
-      billedMinutes: 0,
-      billedCoins: 0,
-    });
-
     return {
-      roomName: call.roomName,
-      roomUrl: call.roomUrl,
+      roomName: result.roomName,
+      roomUrl: result.roomUrl,
       token: receiverToken,
     };
   }
@@ -443,7 +532,7 @@ exports.endCall = onCall(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
-      // --- Finalize Billing Catch-up (for short calls or missed ticks) ---
+      // --- Finalize Billing Catch-up ---
       if (call.status === "accepted" && call?.pricingSnapshot?.type === "video" && call.acceptedAtTs) {
         const elapsedSeconds = Math.max(0, Math.floor((now.toMillis() - call.acceptedAtTs.toMillis()) / 1000));
         const totalBillableMinutes = ceilMinutesByRule(elapsedSeconds);
