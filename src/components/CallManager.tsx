@@ -1,7 +1,6 @@
-
 'use client';
 
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   useUser,
@@ -17,8 +16,6 @@ import {
   where,
   doc,
   onSnapshot,
-  Unsubscribe,
-  getDoc,
 } from 'firebase/firestore';
 import type { Call, UserProfile } from '@/lib/types';
 import { useToast, toast as pushToast } from '@/hooks/use-toast';
@@ -26,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ActiveCallBar } from './ActiveCallBar';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card';
-import { UserAvatar } from './user-avatar';
 import { Phone, PhoneOff, Loader2 } from 'lucide-react';
 
 type AcceptCallResult = {
@@ -173,7 +169,7 @@ export function CallManager() {
         {debugText}
       </div>
 
-      {/* Incoming Call Modal - Higher z-index to ensure visibility on mobile */}
+      {/* Incoming Call Modal */}
       {incomingCall && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
           <Card className="w-full max-w-[320px] shadow-2xl border-primary/20">
@@ -217,7 +213,7 @@ export function CallManager() {
         </div>
       )}
 
-      {/* Active Call Bar (Persistent during call) */}
+      {/* Active Call Bar */}
       {activeCallWithCaller && !incomingCall ? (
         <ActiveCallBar call={activeCallWithCaller} />
       ) : null}

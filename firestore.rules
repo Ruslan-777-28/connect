@@ -34,16 +34,9 @@ service cloud.firestore {
 
     // ---------- Communication Offers ----------
     match /communicationOffers/{offerId} {
-      // ✅ Усі авторизовані користувачі можуть переглядати пропозиції (get та list)
       allow get, list: if isSignedIn();
-      
-      // ✅ Створювати пропозицію може тільки власник
-      allow create: if isSignedIn() 
-        && request.resource.data.ownerId == request.auth.uid;
-      
-      // ✅ Редагувати або видаляти пропозицію може тільки її автор
-      allow update, delete: if isSignedIn() 
-        && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
 
     // ---------- Calls (1:1 video) ----------
@@ -58,7 +51,7 @@ service cloud.firestore {
       // Тільки учасники дзвінка можуть його бачити
       allow read: if isCallParticipant();
       
-      // Стан дзвінків змінюється тільки через серверні функції
+      // Стан дзвінків та білінг змінюються тільки через серверні функції
       allow create, update, delete: if false;
     }
     
