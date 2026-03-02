@@ -414,9 +414,10 @@ exports.endCall = onCall(
         ? request.data.reason.slice(0, 200)
         : null;
 
-    const callRef = admin.firestore().doc(`calls/${callId}`);
+    const db = admin.firestore();
+    const callRef = db.doc(`calls/${callId}`);
 
-    const result = await admin.firestore().runTransaction(async (tx) => {
+    const result = await db.runTransaction(async (tx) => {
       const snap = await tx.get(callRef);
       if (!snap.exists) {
         throw new HttpsError("not-found", "Call not found");
@@ -432,14 +433,63 @@ exports.endCall = onCall(
         return { ok: true, alreadyEnded: true };
       }
 
-      tx.update(callRef, {
+      const now = tsNow();
+      const updates = {
         status: "ended",
         endedAt: admin.firestore.FieldValue.serverTimestamp(),
-        endedAtTs: tsNow(),
+        endedAtTs: now,
         endedBy: uid,
         endReason: reason || "ended",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
+
+      // --- Finalize Billing Catch-up (for short calls or missed ticks) ---
+      if (call.status === "accepted" && call?.pricingSnapshot?.type === "video" && call.acceptedAtTs) {
+        const elapsedSeconds = Math.max(0, Math.floor((now.toMillis() - call.acceptedAtTs.toMillis()) / 1000));
+        const totalBillableMinutes = ceilMinutesByRule(elapsedSeconds);
+        const billedMinutes = Number(call.billedMinutes || 0);
+        const dueMinutes = totalBillableMinutes - billedMinutes;
+
+        if (dueMinutes > 0) {
+          const ratePerMinute = getVideoRateFromPricingSnapshot(call);
+          const callerRef = db.doc(`users/${call.callerId}`);
+          const receiverRef = db.doc(`users/${call.receiverId}`);
+
+          const [callerSnap, receiverSnap] = await Promise.all([tx.get(callerRef), tx.get(receiverRef)]);
+          if (callerSnap.exists && receiverSnap.exists) {
+            const callerBal = Number(callerSnap.data().balance || 0);
+            const receiverBal = Number(receiverSnap.data().balance || 0);
+            
+            const affordableMinutes = Math.floor(callerBal / ratePerMinute);
+            const minutesToBill = Math.min(dueMinutes, affordableMinutes);
+
+            if (minutesToBill > 0) {
+              const coins = minutesToBill * ratePerMinute;
+              applyCoinTransferTx(tx, {
+                db, fromUid: call.callerId, toUid: call.receiverId,
+                amount: coins, callId, kind: "call_finalize",
+                metadata: { minutes: minutesToBill, ratePerMinute }
+              });
+
+              tx.update(callerRef, { 
+                balance: callerBal - coins, 
+                balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp() 
+              });
+              tx.update(receiverRef, { 
+                balance: receiverBal + coins, 
+                balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp() 
+              });
+              
+              updates.billedMinutes = billedMinutes + minutesToBill;
+              updates.billedCoins = Number(call.billedCoins || 0) + coins;
+            }
+          }
+        }
+      }
+
+      tx.update(callRef, updates);
 
       return { ok: true };
     });
@@ -514,6 +564,13 @@ exports.billingTickAcceptedCalls = onSchedule(
           const acceptedAtTs = call.acceptedAtTs;
           if (!acceptedAtTs || typeof acceptedAtTs.toMillis !== "function") return;
 
+          // LOG: tick scan started
+          logger.info("billing tick scan", { 
+            callId, 
+            billedMinutes: call.billedMinutes, 
+            rate: call.pricingSnapshot?.ratePerMinute 
+          });
+
           const elapsedSeconds = Math.max(0, Math.floor((now.toMillis() - acceptedAtTs.toMillis()) / 1000));
           const shouldMinutes = ceilMinutesByRule(elapsedSeconds);
 
@@ -571,6 +628,9 @@ exports.billingTickAcceptedCalls = onSchedule(
               lastBilledAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
+
+            // LOG: success billing
+            logger.info("billed minutes", { callId, minutesToBill, coins });
           }
 
           if (dueMinutes > minutesToBill) {
