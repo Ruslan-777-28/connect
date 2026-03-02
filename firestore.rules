@@ -33,14 +33,8 @@ service cloud.firestore {
             || resource.data.receiverId == request.auth.uid);
     }
 
-    // ---------- Default: deny all access ----------
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // ---------- Users ----------
     match /users/{uid} {
-      // Allow everyone to read user profiles for discovery and status checks.
       allow read: if true;
       allow create: if isSelf(uid);
       allow update: if isSelf(uid) && (isUpdatingProfile() || isUpdatingAvailability());
@@ -49,7 +43,6 @@ service cloud.firestore {
 
     // ---------- Wallet Ledger ----------
     match /walletLedger/{entryId} {
-      // Users can only read their own transaction history. No client writes allowed.
       allow read: if isSignedIn() && isOwner(resource.data.uid);
       allow write: if false;
     }
@@ -62,15 +55,17 @@ service cloud.firestore {
 
     // ---------- Communication Offers ----------
     match /communicationOffers/{offerId} {
-      // Offers are public for discovery
+      // Explicitly allow both single document read (get) and collection query (list)
       allow read: if true;
+      
+      // Ownership rules for mutations
       allow create: if isSignedIn() && isSelf(request.resource.data.ownerId);
       allow update, delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
-    // ---------- Daily Rooms (internal) ----------
-    match /dailyRooms/{roomName} {
-      allow read, write: if false; // System only
+    // ---------- Default: deny all other access ----------
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
