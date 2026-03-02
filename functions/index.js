@@ -31,7 +31,7 @@ function tsNow() {
  * Use ONLY inside a transaction.
  */
 function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, metadata }) {
-  const now = tsNow().toMillis();
+  const now = Date.now();
   // Generate unique IDs for ledger entries to avoid collisions
   const debitRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_debit`);
   const creditRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_credit`);
@@ -357,6 +357,8 @@ exports.acceptCall = onCall(
     const uid = requireAuth(request);
     const callId = assertString(request.data?.callId, "callId");
 
+    logger.info("acceptCall HIT", { callId, uid, rev: process.env.K_REVISION });
+
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
@@ -412,7 +414,6 @@ exports.acceptCall = onCall(
       const receiverBal = Number(receiverSnap.data().balance || 0);
 
       if (callerBal < requiredCoins) {
-        // Якщо на момент accept вже не вистачає — закриваємо як insufficient_balance
         tx.update(callRef, {
           status: "ended",
           endReason: "insufficient_balance",
@@ -420,6 +421,8 @@ exports.acceptCall = onCall(
           endedAt: admin.firestore.FieldValue.serverTimestamp(),
           endedAtTs: tsNow(),
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          acceptedByFn: true,
+          acceptedFnRevision: process.env.K_REVISION || "dev",
         });
         throw new HttpsError("failed-precondition", "INSUFFICIENT_BALANCE");
       }
@@ -466,12 +469,13 @@ exports.acceptCall = onCall(
         billedMinutes: offerType === "video" ? minPrepayMinutes : 0,
         billedCoins: Number(call.billedCoins || 0) + requiredCoins,
         lastBilledAt: admin.firestore.FieldValue.serverTimestamp(),
+        acceptedByFn: true,
+        acceptedFnRevision: process.env.K_REVISION || "dev",
       });
 
       return { ok: true, roomName: call.roomName, roomUrl: call.roomUrl };
     });
 
-    // token генеруємо ПІСЛЯ транзакції
     const apiKey = DAILY_API_KEY.value();
     const receiverName = await getUserName(uid);
     const receiverToken = await createDailyMeetingToken(apiKey, {
@@ -503,6 +507,8 @@ exports.endCall = onCall(
         ? request.data.reason.slice(0, 200)
         : null;
 
+    logger.info("endCall HIT", { callId, uid, rev: process.env.K_REVISION });
+
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
@@ -530,6 +536,8 @@ exports.endCall = onCall(
         endedBy: uid,
         endReason: reason || "ended",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        endedByFn: true,
+        endedFnRevision: process.env.K_REVISION || "dev",
       };
 
       // --- Finalize Billing Catch-up ---
@@ -653,7 +661,6 @@ exports.billingTickAcceptedCalls = onSchedule(
           const acceptedAtTs = call.acceptedAtTs;
           if (!acceptedAtTs || typeof acceptedAtTs.toMillis !== "function") return;
 
-          // LOG: tick scan started
           logger.info("billing tick scan", { 
             callId, 
             billedMinutes: call.billedMinutes, 
@@ -718,7 +725,6 @@ exports.billingTickAcceptedCalls = onSchedule(
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
 
-            // LOG: success billing
             logger.info("billed minutes", { callId, minutesToBill, coins });
           }
 
@@ -819,7 +825,6 @@ exports.dailyWebhook = onRequest(
 
         const now = tsNow();
 
-        // ✅ FINAL BILLING in Webhook when everyone leaves
         if (nextActive === 0 && eventType !== "participant.joined" && status === "accepted") {
           try {
             if (call?.pricingSnapshot?.type === "video" && call.acceptedAtTs) {
@@ -872,6 +877,8 @@ exports.dailyWebhook = onRequest(
           updates.endedBy = updates.endedBy || "system";
           updates.endedAt = admin.firestore.FieldValue.serverTimestamp();
           updates.endedAtTs = now;
+          updates.endedByFn = true;
+          updates.endedFnRevision = process.env.K_REVISION || "dev";
         }
 
         tx.update(callRef, updates);
@@ -889,4 +896,3 @@ exports.dailyWebhook = onRequest(
     }
   }
 );
-    
