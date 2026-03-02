@@ -7,67 +7,25 @@
       "type": "object",
       "description": "Represents a user's profile in the ConnectU application.",
       "properties": {
-        "id": {
-          "type": "string"
-        },
-        "email": {
-          "type": "string",
-          "format": "email"
-        },
-        "name": {
-          "type": "string"
-        },
-        "avatarUrl": {
-          "type": "string",
-          "format": "uri"
-        },
-        "bio": {
-          "type": "string"
-        },
-        "balance": {
-          "type": "number",
-          "default": 0
-        },
-        "currency": {
-          "type": "string",
-          "default": "COIN"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "balanceUpdatedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string", "format": "uri" },
+        "bio": { "type": "string" },
+        "balance": { "type": "number", "default": 0 },
+        "currency": { "type": "string", "default": "COIN" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "balanceUpdatedAt": { "type": "string", "format": "date-time" },
         "availability": {
           "type": "object",
           "properties": {
-            "status": {
-              "type": "string",
-              "enum": [
-                "online",
-                "offline"
-              ]
-            },
-            "until": {
-              "type": "string",
-              "format": "date-time"
-            }
+            "status": { "type": "string", "enum": ["online", "offline"] },
+            "until": { "type": "string", "format": "date-time" }
           }
         }
       },
-      "required": [
-        "id",
-        "email",
-        "name",
-        "createdAt",
-        "balance"
-      ]
+      "required": ["id", "email", "name", "createdAt", "balance"]
     },
     "WalletLedgerEntry": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -82,9 +40,12 @@
         "currency": { "type": "string", "default": "COIN" },
         "balanceAfter": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "status": { "type": "string", "enum": ["posted", "pending", "failed"] }
+        "status": { "type": "string", "enum": ["posted", "pending", "failed"] },
+        "callId": { "type": "string" },
+        "kind": { "type": "string" },
+        "metadata": { "type": "object" }
       },
-      "required": ["uid", "type", "amount", "balanceAfter", "createdAt", "status"]
+      "required": ["uid", "type", "amount", "status"]
     },
     "Call": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -92,61 +53,36 @@
       "type": "object",
       "description": "Represents a call between two users.",
       "properties": {
+        "id": { "type": "string" },
         "callerId": { "type": "string" },
         "receiverId": { "type": "string" },
+        "callerName": { "type": "string" },
         "status": { "type": "string", "enum": ["ringing", "accepted", "ended", "declined", "missed", "expired"] },
         "roomUrl": { "type": "string" },
         "roomName": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
+        "createdAtTs": { "type": "object" },
         "updatedAt": { "type": "string", "format": "date-time" },
+        "acceptedAtTs": { "type": "object" },
+        "endedAtTs": { "type": "object" },
         "offerId": { "type": "string" },
+        "billedMinutes": { "type": "number" },
+        "billedCoins": { "type": "number" },
+        "endReason": { "type": "string" },
         "pricingSnapshot": {
           "type": "object",
           "properties": {
             "type": { "type": "string" },
-            "categoryId": { "type": "string" },
-            "subcategoryId": { "type": "string" },
-            "currency": { "type": "string", "default": "COIN" },
             "ratePerMinute": { "type": "number" },
-            "ratePerFile": { "type": "number" },
-            "ratePerQuestion": { "type": "number" },
-            "capturedAt": { "type": "string", "format": "date-time" }
+            "currency": { "type": "string", "default": "COIN" }
           }
         }
       },
-      "required": ["callerId", "receiverId", "status", "createdAt", "updatedAt", "roomName", "roomUrl"]
-    },
-    "CommunicationOffer": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "CommunicationOffer",
-      "type": "object",
-      "description": "A proposal for communication services offered by a user, including pricing details.",
-      "properties": {
-        "ownerId": { "type": "string" },
-        "type": { "type": "string", "enum": ["video", "file", "text"] },
-        "categoryId": { "type": "string" },
-        "subcategoryId": { "type": "string" },
-        "pricing": {
-          "type": "object",
-          "properties": {
-            "ratePerMinute": { "type": "number" },
-            "ratePerFile": { "type": "number" },
-            "ratePerQuestion": { "type": "number" },
-            "currency": { "type": "string", "default": "COIN" }
-          }
-        },
-        "status": { "type": "string", "enum": ["active", "inactive"] },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      },
-      "required": ["ownerId", "type", "pricing", "status"]
+      "required": ["callerId", "receiverId", "status", "roomName", "roomUrl"]
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
     "structure": [
@@ -164,14 +100,6 @@
           "entityName": "Call",
           "schema": { "$ref": "#/backend/entities/Call" },
           "description": "Stores information about calls between users."
-        }
-      },
-      {
-        "path": "/communicationOffers/{offerId}",
-        "definition": {
-          "entityName": "CommunicationOffer",
-          "schema": { "$ref": "#/backend/entities/CommunicationOffer" },
-          "description": "Stores communication service proposals."
         }
       },
       {
