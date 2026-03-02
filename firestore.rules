@@ -13,54 +13,54 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
-    function isOwner(ownerId) {
-      return isSignedIn() && request.auth.uid == ownerId;
-    }
-
-    function isUpdatingProfile() {
-      return request.resource.data.diff(resource.data).changedKeys()
-        .hasOnly(['name', 'bio', 'avatarUrl', 'updatedAt']);
-    }
-
-    function isUpdatingAvailability() {
-      return request.resource.data.diff(resource.data).changedKeys()
-        .hasOnly(['availability']);
-    }
-
-    function isCallParticipant() {
-      return isSignedIn()
-        && (resource.data.callerId == request.auth.uid
-            || resource.data.receiverId == request.auth.uid);
-    }
-
     // ---------- Users ----------
     match /users/{uid} {
-      allow read: if true;
+      // Будь-який авторизований користувач може бачити профілі інших
+      allow get, list: if isSignedIn();
+      
+      // Створювати та редагувати профіль може тільки сам користувач
       allow create: if isSelf(uid);
-      allow update: if isSelf(uid) && (isUpdatingProfile() || isUpdatingAvailability());
+      allow update: if isSelf(uid);
       allow delete: if false;
     }
 
     // ---------- Wallet Ledger ----------
-    match /walletLedger/{entryId} {
-      allow read: if isSignedIn() && isOwner(resource.data.uid);
-      allow write: if false;
-    }
-
-    // ---------- Calls (1:1 video) ----------
-    match /calls/{callId} {
-      allow read: if isCallParticipant();
+    match /walletLedger/{txId} {
+      // Користувач бачить тільки свою історію транзакцій
+      allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      
+      // Записи в реєстр робить тільки сервер (Cloud Functions)
       allow create, update, delete: if false;
     }
 
     // ---------- Communication Offers ----------
     match /communicationOffers/{offerId} {
-      // Explicitly allow both single document read (get) and collection query (list)
-      allow read: if true;
+      // Усі авторизовані користувачі можуть переглядати пропозиції (get та list)
+      allow get, list: if isSignedIn();
       
-      // Ownership rules for mutations
-      allow create: if isSignedIn() && isSelf(request.resource.data.ownerId);
-      allow update, delete: if isSignedIn() && isOwner(resource.data.ownerId);
+      // Створювати пропозицію може тільки власник
+      allow create: if isSignedIn() 
+        && request.resource.data.ownerId == request.auth.uid;
+      
+      // Редагувати або видаляти пропозицію може тільки її автор
+      allow update, delete: if isSignedIn() 
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ---------- Calls (1:1 video) ----------
+    match /calls/{callId} {
+      function isCallParticipant() {
+        return isSignedIn() && (
+          resource.data.callerId == request.auth.uid || 
+          resource.data.receiverId == request.auth.uid
+        );
+      }
+      
+      // Тільки учасники дзвінка можуть його бачити
+      allow read: if isCallParticipant();
+      
+      // Стан дзвінків змінюється тільки через серверні функції
+      allow create, update, delete: if false;
     }
 
     // ---------- Default: deny all other access ----------
