@@ -32,6 +32,7 @@ function tsNow() {
  */
 function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, metadata }) {
   const now = tsNow().toMillis();
+  // Generate unique IDs for ledger entries to avoid collisions
   const debitRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_debit`);
   const creditRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_credit`);
 
@@ -172,11 +173,9 @@ async function createDailyMeetingToken(apiKey, { roomName, userName, userId, isO
 }
 
 exports.devTopUp = onCall(
-  { region: "us-central1" },
+  { region: "us-central1", enforceAppCheck: false },
   async (request) => {
     const uid = requireAuth(request);
-
-    // ВІДКРИТО ДЛЯ ВСІХ АВТОРИЗОВАНИХ КОРИСТУВАЧІВ ДЛЯ ТЕСТУВАННЯ
     const amount = Number(request.data?.amount || 100);
 
     if (isNaN(amount) || amount <= 0) {
@@ -692,3 +691,5 @@ exports.dailyWebhook = onRequest(
     }
   }
 );
+
+    
