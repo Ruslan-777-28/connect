@@ -26,7 +26,8 @@ service cloud.firestore {
 
     // ---------- Wallet Ledger ----------
     match /walletLedger/{txId} {
-      // Користувач бачить тільки свою історію транзакцій
+      // Користувач бачить тільки свою історію транзакцій. 
+      // Примітка: Клієнтський запит повинен містити фільтр .where('uid', '==', auth.uid)
       allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
       
       // Записи в реєстр робить тільки сервер (Cloud Functions)
@@ -35,14 +36,14 @@ service cloud.firestore {
 
     // ---------- Communication Offers ----------
     match /communicationOffers/{offerId} {
-      // Усі авторизовані користувачі можуть переглядати пропозиції (get та list)
+      // ✅ Усі авторизовані користувачі можуть переглядати пропозиції (get та list)
       allow get, list: if isSignedIn();
       
-      // Створювати пропозицію може тільки власник
+      // ✅ Створювати пропозицію може тільки власник
       allow create: if isSignedIn() 
         && request.resource.data.ownerId == request.auth.uid;
       
-      // Редагувати або видаляти пропозицію може тільки її автор
+      // ✅ Редагувати або видаляти пропозицію може тільки її автор
       allow update, delete: if isSignedIn() 
         && resource.data.ownerId == request.auth.uid;
     }
@@ -61,6 +62,12 @@ service cloud.firestore {
       
       // Стан дзвінків змінюється тільки через серверні функції
       allow create, update, delete: if false;
+    }
+    
+    // ---------- Daily Rooms Mapping ----------
+    match /dailyRooms/{roomName} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     // ---------- Default: deny all other access ----------
