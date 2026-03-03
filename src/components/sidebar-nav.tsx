@@ -1,3 +1,4 @@
+
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -25,6 +26,7 @@ import {
 import { Skeleton } from './ui/skeleton';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { useAvailability } from '@/hooks/useAvailability';
+import { Badge } from './ui/badge';
 
 export function SidebarNav() {
   const { user, isUserLoading } = useUser();
@@ -58,7 +60,7 @@ export function SidebarNav() {
     ? [
         { href: '/', label: 'Home', icon: Home },
         { href: '/chats', label: 'Chats', icon: MessageSquare },
-        { href: '/notifications', label: 'Notifications', icon: Bell },
+        { href: '/notifications', label: 'Notifications', icon: Bell, badge: '2' },
         { href: '/profile', label: 'Profile', icon: User },
       ]
     : [];
@@ -110,7 +112,7 @@ export function SidebarNav() {
 
       <SidebarContent className="flex-1 p-2">
         <SidebarMenu>
-          {(user ? navLinks : authLinks).map(({ href, label, icon: Icon }) => (
+          {(user ? navLinks : authLinks).map(({ href, label, icon: Icon, badge }) => (
             <SidebarMenuItem key={label}>
               <SidebarMenuButton
                 asChild
@@ -118,9 +120,16 @@ export function SidebarNav() {
                 onClick={closeSheet}
                 tooltip={label}
               >
-                <Link href={href}>
-                  <Icon />
-                  <span>{label}</span>
+                <Link href={href} className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-2">
+                    <Icon />
+                    <span>{label}</span>
+                  </div>
+                  {badge && (
+                    <Badge variant="destructive" className="h-4 min-w-[16px] px-1 flex items-center justify-center text-[10px] group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:top-0 group-data-[collapsible=icon]:right-0">
+                      {badge}
+                    </Badge>
+                  )}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

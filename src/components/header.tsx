@@ -1,3 +1,4 @@
+
 'use client';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Menu, MessageSquare, Bell } from 'lucide-react';
@@ -51,9 +52,10 @@ export function Header() {
                 <MessageSquare className="h-5 w-5" />
               </Link>
             </Button>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="icon" asChild className="relative">
               <Link href="/notifications">
                 <Bell className="h-5 w-5" />
+                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive border-2 border-card" />
               </Link>
             </Button>
           </>
