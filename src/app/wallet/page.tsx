@@ -7,13 +7,13 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { UserProfile } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock, ArrowRightLeft } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
 export default function WalletPage() {
-  const { user } = useUser();
+  const { user } = userUser();
   const firestore = useFirestore();
   const app = useFirebaseApp();
   const router = useRouter();
@@ -151,12 +151,6 @@ export default function WalletPage() {
           </Button>
         </CardContent>
       </Card>
-
-      <div className="mt-12 text-center">
-        <p className="text-sm text-muted-foreground">
-          Тут ви можете керувати своїм балансом COIN для здійснення відеодзвінків та замовлення послуг.
-        </p>
-      </div>
     </div>
   );
 }
