@@ -71,7 +71,9 @@ export default function WalletPage() {
 
   return (
     <div className="container mx-auto max-w-2xl p-4 py-8 pb-24">
-      <h1 className="mb-8 text-3xl font-bold tracking-tight">Aktive</h1>
+      <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+        Aktive
+      </h1>
 
       <Card className="bg-primary text-primary-foreground overflow-hidden border-none shadow-xl mb-6">
         <CardHeader className="pb-2">
@@ -99,15 +101,6 @@ export default function WalletPage() {
               )}
               <span className="text-[10px] uppercase font-bold">Поповнити</span>
             </Button>
-            
-            <Button 
-              variant="secondary" 
-              className="bg-white/20 hover:bg-white/30 border-none text-white px-2 py-6 flex flex-col gap-1 h-auto opacity-50 cursor-not-allowed"
-              disabled
-            >
-              <ArrowUpRight className="h-4 w-4" />
-              <span className="text-[10px] uppercase font-bold">Вивести</span>
-            </Button>
 
             <Button 
               variant="secondary" 
@@ -116,6 +109,15 @@ export default function WalletPage() {
             >
               <History className="h-4 w-4" />
               <span className="text-[10px] uppercase font-bold">Транзакції</span>
+            </Button>
+            
+            <Button 
+              variant="secondary" 
+              className="bg-white/20 hover:bg-white/30 border-none text-white px-2 py-6 flex flex-col gap-1 h-auto opacity-50 cursor-not-allowed"
+              disabled
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              <span className="text-[10px] uppercase font-bold">Вивести</span>
             </Button>
           </div>
         </CardContent>
