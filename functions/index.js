@@ -51,6 +51,19 @@ function requestTtl24h() {
   return admin.firestore.Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000);
 }
 
+function buildNotification({ uid, channel, kind, requestId, title, body }) {
+  return {
+    uid,
+    channel,
+    kind,
+    requestId,
+    title: title || "",
+    body: body || "",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    readAt: null,
+  };
+}
+
 function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, metadata }) {
   const now = Date.now();
   const debitRef = db.collection("walletLedger").doc(`${callId}_${kind}_${now}_debit`);
@@ -160,6 +173,17 @@ exports.createCommunicationRequest = onCall(
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       }
+
+      // Notification to author
+      const nRef = db.collection("notifications").doc();
+      tx.set(nRef, buildNotification({
+        uid: authorId,
+        channel: "user",
+        kind: "request_created",
+        requestId: requestRef.id,
+        title: "Новий запит",
+        body: type === "file" ? "Надійшов запит: питання + файл." : "Надійшов запит: питання."
+      }));
     });
 
     return { requestId: requestRef.id };
@@ -197,6 +221,17 @@ exports.postAnswer = onCall(
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
         lastMessagePreview: answerText.slice(0, 120),
       });
+
+      // Notification to initiator
+      const nRef = db.collection("notifications").doc();
+      tx.set(nRef, buildNotification({
+        uid: req.initiatorId,
+        channel: "user",
+        kind: "request_answered",
+        requestId,
+        title: "Є відповідь",
+        body: "Професіонал надіслав відповідь. Перегляньте та підтвердіть оплату."
+      }));
     });
 
     return { ok: true };
@@ -258,6 +293,17 @@ exports.confirmReceiptAndCapture = onCall(
         senderId: "system", kind: "system", text: `Payment captured: ${amount} COIN`,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      // Notification to author
+      const nRef = db.collection("notifications").doc();
+      tx.set(nRef, buildNotification({
+        uid: req.authorId,
+        channel: "user",
+        kind: "request_completed",
+        requestId,
+        title: "Оплата підтверджена",
+        body: `Замовник підтвердив отримання. Нараховано ${amount} COIN.`
+      }));
     });
 
     return { ok: true };
@@ -304,8 +350,39 @@ exports.declineCommunicationRequest = onCall(
         senderId: "system", kind: "system", text: `Request declined: ${reason}`,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
+
+      const otherUid = (uid === req.initiatorId) ? req.authorId : req.initiatorId;
+      const nRef = db.collection("notifications").doc();
+      tx.set(nRef, buildNotification({
+        uid: otherUid,
+        channel: "user",
+        kind: "request_declined",
+        requestId,
+        title: "Запит відхилено",
+        body: "Запит було відхилено іншою стороною. Резерв знято."
+      }));
     });
 
+    return { ok: true };
+  }
+);
+
+// --- NOTIFICATION: MARK READ ---
+exports.markNotificationRead = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const notificationId = assertNonEmptyString(request.data?.notificationId, "notificationId");
+    const db = admin.firestore();
+    const nRef = db.doc(`notifications/${notificationId}`);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(nRef);
+      if (!snap.exists) return;
+      if (snap.data().uid !== uid) throw new HttpsError("permission-denied", "NOT_YOUR_NOTIFICATION");
+      if (snap.data().readAt) return;
+      tx.update(nRef, { readAt: admin.firestore.FieldValue.serverTimestamp() });
+    });
     return { ok: true };
   }
 );
@@ -320,8 +397,8 @@ exports.expireCommunicationRequests = onSchedule(
       .where("status", "in", ["pending", "answered"])
       .where("expiresAt", "<=", now).limit(100).get();
 
-    for (const doc of snap.docs) {
-      const req = doc.data();
+    for (const docSnap of snap.docs) {
+      const req = docSnap.data();
       await db.runTransaction(async (tx) => {
         const holdRef = db.doc(`walletHolds/${req.holdId}`);
         const holdSnap = await tx.get(holdRef);
@@ -335,13 +412,33 @@ exports.expireCommunicationRequests = onSchedule(
           }
           tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
-        tx.update(doc.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
+        tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
+        
+        // Notifications to both
+        const n1 = db.collection("notifications").doc();
+        tx.set(n1, buildNotification({
+          uid: req.payerId,
+          channel: "user",
+          kind: "request_expired",
+          requestId: docSnap.id,
+          title: "Запит прострочено",
+          body: "Минуло 24 години. Резерв знято."
+        }));
+        const n2 = db.collection("notifications").doc();
+        tx.set(n2, buildNotification({
+          uid: req.authorId,
+          channel: "user",
+          kind: "request_expired",
+          requestId: docSnap.id,
+          title: "Запит прострочено",
+          body: "Минуло 24 години. Запит автоматично закрито."
+        }));
       });
     }
   }
 );
 
-// --- VIDEO CALLS (Legacy/Daily) ---
+// --- VIDEO CALLS ---
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
@@ -388,8 +485,6 @@ exports.acceptCall = onCall(
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
-    logger.info("acceptCall HIT", { callId, uid, rev: process.env.K_REVISION });
-
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(callRef);
       if (!snap.exists) throw new HttpsError("not-found", "Call not found");
@@ -408,7 +503,7 @@ exports.acceptCall = onCall(
 
       tx.update(callerRef, { balance: callerSnap.data().balance - rate });
       tx.update(receiverRef, { balance: receiverSnap.data().balance + rate });
-      tx.update(callRef, { status: "accepted", acceptedAtTs: tsNow(), billedMinutes: 1, billedCoins: rate, acceptedByFn: true, acceptedFnRevision: process.env.K_REVISION || "dev" });
+      tx.update(callRef, { status: "accepted", acceptedAtTs: tsNow(), billedMinutes: 1, billedCoins: rate });
     });
 
     return { ok: true };
@@ -428,7 +523,7 @@ exports.endCall = onCall(
       if (!snap.exists || snap.data().status === "ended") return;
       const call = snap.data();
 
-      const updates = { status: "ended", endReason: reason || "ended_by_user", endedAtTs: tsNow(), endedByFn: true, endedFnRevision: process.env.K_REVISION || "dev" };
+      const updates = { status: "ended", endReason: reason || "ended_by_user", endedAtTs: tsNow() };
 
       if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs) {
         const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
@@ -452,8 +547,8 @@ exports.billingTickAcceptedCalls = onSchedule(
   async () => {
     const db = admin.firestore();
     const snap = await db.collection("calls").where("status", "==", "accepted").limit(50).get();
-    for (const doc of snap.docs) {
-      const call = doc.data();
+    for (const docSnap of snap.docs) {
+      const call = docSnap.data();
       if (call.type !== "video" || !call.acceptedAtTs) continue;
       const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
       const currentFullMin = Math.floor(elapsedSec / 60);
@@ -464,11 +559,11 @@ exports.billingTickAcceptedCalls = onSchedule(
           const cSnap = await tx.get(callerRef);
           const rate = call.pricingSnapshot.ratePerMinute;
           if (cSnap.data().balance < (dueMin * rate)) {
-            tx.update(doc.ref, { status: "ended", endReason: "insufficient_balance" });
+            tx.update(docSnap.ref, { status: "ended", endReason: "insufficient_balance" });
           } else {
-            applyCoinTransferTx(tx, { db, fromUid: call.callerId, toUid: call.receiverId, amount: dueMin * rate, callId: doc.id, kind: "call_tick" });
+            applyCoinTransferTx(tx, { db, fromUid: call.callerId, toUid: call.receiverId, amount: dueMin * rate, callId: docSnap.id, kind: "call_tick" });
             tx.update(callerRef, { balance: cSnap.data().balance - (dueMin * rate) });
-            tx.update(doc.ref, { billedMinutes: call.billedMinutes + dueMin, billedCoins: call.billedCoins + (dueMin * rate) });
+            tx.update(docSnap.ref, { billedMinutes: call.billedMinutes + dueMin, billedCoins: call.billedCoins + (dueMin * rate) });
           }
         });
       }

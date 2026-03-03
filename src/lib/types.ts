@@ -53,6 +53,18 @@ export type CommunicationRequest = {
   fileMeta?: any;
 };
 
+export type Notification = {
+  id: string;
+  uid: string;
+  channel: 'system' | 'user';
+  kind: string;
+  requestId?: string;
+  title: string;
+  body: string;
+  createdAt: Timestamp | any;
+  readAt: Timestamp | any | null;
+};
+
 export type WalletHold = {
   id: string;
   uid: string;
@@ -105,5 +117,5 @@ export type Call = CommunicationRequest & {
   billedCoins?: number;
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
-  caller?: UserProfile; // Added for UI helpers
+  caller?: UserProfile;
 };

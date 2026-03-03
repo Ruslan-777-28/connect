@@ -4,19 +4,34 @@ import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Menu, MessageSquare, Bell } from 'lucide-react';
 import { Button } from './ui/button';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
-import { useUser } from '@/firebase';
+import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, where, limit } from 'firebase/firestore';
 import { useAvailability } from '@/hooks/useAvailability';
 import { Skeleton } from './ui/skeleton';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 
 export function Header() {
   const { isMobile } = useSidebar();
   const { user, isUserLoading } = useUser();
+  const firestore = useFirestore();
   const { availability, isLoading: isAvailabilityLoading } = useAvailability(
     user?.uid
   );
 
-  // Only show the header on mobile. On desktop, the sidebar is persistent.
+  // Check for unread notifications
+  const unreadQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'notifications'),
+      where('uid', '==', user.uid),
+      where('readAt', '==', null),
+      limit(1)
+    ) : null),
+    [user, firestore]
+  );
+  const { data: unreadNotifs } = useCollection(unreadQuery);
+  const hasUnread = unreadNotifs && unreadNotifs.length > 0;
+
   if (!isMobile) {
     return null;
   }
@@ -55,7 +70,9 @@ export function Header() {
             <Button variant="ghost" size="icon" asChild className="relative">
               <Link href="/notifications">
                 <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-destructive border-2 border-card" />
+                {hasUnread && (
+                  <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-destructive border-2 border-card" />
+                )}
               </Link>
             </Button>
           </>

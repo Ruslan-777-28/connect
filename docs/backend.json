@@ -64,37 +64,18 @@
         "createdAt": { "type": "string", "format": "date-time" }
       }
     },
-    "WalletHold": {
-      "title": "WalletHold",
+    "Notification": {
+      "title": "Notification",
       "type": "object",
-      "description": "Reserved amount on user's balance.",
       "properties": {
-        "id": { "type": "string" },
         "uid": { "type": "string" },
-        "amount": { "type": "number" },
-        "currency": { "type": "string", "default": "COIN" },
-        "status": { "type": "string", "enum": ["held", "captured", "released"] },
-        "refType": { "type": "string" },
-        "refId": { "type": "string" },
+        "channel": { "type": "string", "enum": ["system", "user"] },
+        "kind": { "type": "string" },
+        "requestId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "expiresAt": { "type": "string", "format": "date-time" }
-      }
-    },
-    "WalletLedgerEntry": {
-      "title": "WalletLedgerEntry",
-      "type": "object",
-      "description": "Represents a single transaction in the wallet ledger.",
-      "properties": {
-        "id": { "type": "string" },
-        "uid": { "type": "string" },
-        "type": { "type": "string", "enum": ["topup", "call_payment", "payout"] },
-        "amount": { "type": "number" },
-        "currency": { "type": "string", "default": "COIN" },
-        "balanceAfter": { "type": "number" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "status": { "type": "string", "enum": ["posted", "pending", "failed"] },
-        "callId": { "type": "string" },
-        "kind": { "type": "string" }
+        "readAt": { "type": "string", "format": "date-time", "nullable": true }
       }
     }
   },
@@ -116,12 +97,8 @@
         "definition": { "entityName": "Message", "schema": { "$ref": "#/backend/entities/Message" } }
       },
       {
-        "path": "/walletHolds/{holdId}",
-        "definition": { "entityName": "WalletHold", "schema": { "$ref": "#/backend/entities/WalletHold" } }
-      },
-      {
-        "path": "/walletLedger/{entryId}",
-        "definition": { "entityName": "WalletLedgerEntry", "schema": { "$ref": "#/backend/entities/WalletLedgerEntry" } }
+        "path": "/notifications/{notificationId}",
+        "definition": { "entityName": "Notification", "schema": { "$ref": "#/backend/entities/Notification" } }
       }
     ]
   }

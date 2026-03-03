@@ -2,7 +2,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { doc } from 'firebase/firestore';
+import { doc, collection, query, where, limit } from 'firebase/firestore';
 import { Home, User, LogOut, LogIn, UserPlus, MessageSquare, Bell } from 'lucide-react';
 import {
   useUser,
@@ -10,9 +10,10 @@ import {
   useFirestore,
   useDoc,
   useMemoFirebase,
+  useCollection,
 } from '@/firebase';
 import { UserAvatar } from './user-avatar';
-import type { UserProfile, Availability } from '@/lib/types';
+import type { UserProfile } from '@/lib/types';
 import {
   Sidebar,
   SidebarContent,
@@ -26,7 +27,6 @@ import {
 import { Skeleton } from './ui/skeleton';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { useAvailability } from '@/hooks/useAvailability';
-import { Badge } from './ui/badge';
 
 export function SidebarNav() {
   const { user, isUserLoading } = useUser();
@@ -47,6 +47,19 @@ export function SidebarNav() {
     user?.uid
   );
 
+  // Check for unread notifications
+  const unreadQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'notifications'),
+      where('uid', '==', user.uid),
+      where('readAt', '==', null),
+      limit(1)
+    ) : null),
+    [user, firestore]
+  );
+  const { data: unreadNotifs } = useCollection(unreadQuery);
+  const hasUnread = unreadNotifs && unreadNotifs.length > 0;
+
   const logout = () => {
     auth.signOut();
     setOpenMobile(false);
@@ -60,7 +73,7 @@ export function SidebarNav() {
     ? [
         { href: '/', label: 'Home', icon: Home },
         { href: '/chats', label: 'Chats', icon: MessageSquare },
-        { href: '/notifications', label: 'Notifications', icon: Bell, badge: '2' },
+        { href: '/notifications', label: 'Notifications', icon: Bell, hasUnread },
         { href: '/profile', label: 'Profile', icon: User },
       ]
     : [];
@@ -112,7 +125,7 @@ export function SidebarNav() {
 
       <SidebarContent className="flex-1 p-2">
         <SidebarMenu>
-          {(user ? navLinks : authLinks).map(({ href, label, icon: Icon, badge }) => (
+          {(user ? navLinks : authLinks).map(({ href, label, icon: Icon, hasUnread }) => (
             <SidebarMenuItem key={label}>
               <SidebarMenuButton
                 asChild
@@ -121,15 +134,13 @@ export function SidebarNav() {
                 tooltip={label}
               >
                 <Link href={href} className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 relative">
                     <Icon />
                     <span>{label}</span>
+                    {hasUnread && (
+                      <span className="absolute -top-1 -left-1 h-2 w-2 rounded-full bg-destructive border border-sidebar-background" />
+                    )}
                   </div>
-                  {badge && (
-                    <Badge variant="destructive" className="h-4 min-w-[16px] px-1 flex items-center justify-center text-[10px] group-data-[collapsible=icon]:absolute group-data-[collapsible=icon]:top-0 group-data-[collapsible=icon]:right-0">
-                      {badge}
-                    </Badge>
-                  )}
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

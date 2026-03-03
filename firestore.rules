@@ -21,6 +21,12 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- Notifications ----------
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     // ---------- Wallet Ledger ----------
     match /walletLedger/{txId} {
       allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
@@ -61,7 +67,6 @@ service cloud.firestore {
       }
     }
 
-    // ---------- Calls (Legacy fallback or specific video rules) ----------
     match /calls/{callId} {
       function isCallParticipant() {
         return isSignedIn() && (
