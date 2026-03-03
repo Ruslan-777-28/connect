@@ -7,10 +7,39 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { UserProfile } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock, Video, FileText, HelpCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { UserAvatar } from '@/components/user-avatar';
+import { cn } from '@/lib/utils';
+
+type TabType = 'i_owe' | 'pending' | 'owed_to_me';
+
+interface DemoItem {
+  id: string;
+  type: 'video' | 'file' | 'text';
+  userName: string;
+  userAvatar: string;
+  reward: string;
+  date: string;
+}
+
+const demoData: Record<TabType, DemoItem[]> = {
+  i_owe: [
+    { id: '1', type: 'video', userName: 'Олександр В.', userAvatar: 'https://picsum.photos/seed/1/200', reward: '50 COIN', date: '24.05.2024' },
+    { id: '2', type: 'text', userName: 'Марія К.', userAvatar: 'https://picsum.photos/seed/2/200', reward: '20 COIN', date: '23.05.2024' },
+  ],
+  pending: [
+    { id: '3', type: 'file', userName: 'Іван Д.', userAvatar: 'https://picsum.photos/seed/3/200', reward: '100 COIN', date: '25.05.2024' },
+    { id: '4', type: 'video', userName: 'Олена С.', userAvatar: 'https://picsum.photos/seed/4/200', reward: '30 COIN', date: '25.05.2024' },
+    { id: '5', type: 'text', userName: 'Петро Р.', userAvatar: 'https://picsum.photos/seed/5/200', reward: '15 COIN', date: '24.05.2024' },
+  ],
+  owed_to_me: [
+    { id: '6', type: 'video', userName: 'Анна М.', userAvatar: 'https://picsum.photos/seed/6/200', reward: '45 COIN', date: '22.05.2024' },
+  ],
+};
 
 export default function WalletPage() {
   const { user } = useUser();
@@ -20,8 +49,8 @@ export default function WalletPage() {
   const { toast } = useToast();
 
   const [isTopUpLoading, setIsTopUpLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>('pending');
 
-  // Profile data
   const userDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'users', user.uid) : null),
     [user, firestore]
@@ -68,6 +97,15 @@ export default function WalletPage() {
 
   const balance = profile?.balance ?? 0;
   const currency = profile?.currency || 'COIN';
+
+  const renderIcon = (type: string) => {
+    switch (type) {
+      case 'video': return <Video className="h-4 w-4" />;
+      case 'file': return <FileText className="h-4 w-4" />;
+      case 'text': return <HelpCircle className="h-4 w-4" />;
+      default: return null;
+    }
+  };
 
   return (
     <div className="container mx-auto max-w-2xl p-4 py-8 pb-24">
@@ -123,34 +161,82 @@ export default function WalletPage() {
         </CardContent>
       </Card>
 
-      {/* New card for debts and pending actions */}
-      <Card className="mb-8 border-primary/10 shadow-sm">
-        <CardContent className="p-4 grid grid-cols-3 gap-2">
-          <Button 
-            variant="outline" 
-            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
-          >
-            <ArrowUpRight className="h-4 w-4 text-destructive" />
-            <span className="text-[10px] uppercase font-bold text-center">Я винен</span>
-          </Button>
+      <div className="space-y-4">
+        <Card className="border-primary/10 shadow-sm overflow-hidden">
+          <CardContent className="p-4 grid grid-cols-3 gap-2">
+            <Button 
+              variant={activeTab === 'i_owe' ? 'default' : 'outline'}
+              className={cn(
+                "flex flex-col items-center gap-1 h-auto py-4 border-dashed",
+                activeTab === 'i_owe' && "border-solid"
+              )}
+              onClick={() => setActiveTab('i_owe')}
+            >
+              <ArrowUpRight className={cn("h-4 w-4", activeTab === 'i_owe' ? "text-white" : "text-destructive")} />
+              <span className="text-[10px] uppercase font-bold text-center">Я винен</span>
+            </Button>
 
-          <Button 
-            variant="outline" 
-            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
-          >
-            <Clock className="h-4 w-4 text-primary" />
-            <span className="text-[10px] uppercase font-bold text-center">На розгляді</span>
-          </Button>
+            <Button 
+              variant={activeTab === 'pending' ? 'default' : 'outline'}
+              className={cn(
+                "flex flex-col items-center gap-1 h-auto py-4 border-dashed",
+                activeTab === 'pending' && "border-solid"
+              )}
+              onClick={() => setActiveTab('pending')}
+            >
+              <Clock className={cn("h-4 w-4", activeTab === 'pending' ? "text-white" : "text-primary")} />
+              <span className="text-[10px] uppercase font-bold text-center">На розгляді</span>
+            </Button>
 
-          <Button 
-            variant="outline" 
-            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
-          >
-            <ArrowDownLeft className="h-4 w-4 text-green-600" />
-            <span className="text-[10px] uppercase font-bold text-center">Мені винні</span>
-          </Button>
-        </CardContent>
-      </Card>
+            <Button 
+              variant={activeTab === 'owed_to_me' ? 'default' : 'outline'}
+              className={cn(
+                "flex flex-col items-center gap-1 h-auto py-4 border-dashed",
+                activeTab === 'owed_to_me' && "border-solid"
+              )}
+              onClick={() => setActiveTab('owed_to_me')}
+            >
+              <ArrowDownLeft className={cn("h-4 w-4", activeTab === 'owed_to_me' ? "text-white" : "text-green-600")} />
+              <span className="text-[10px] uppercase font-bold text-center">Мені винні</span>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <ScrollArea className="h-[400px] w-full rounded-xl border border-primary/5 bg-muted/20 p-4">
+          <div className="space-y-4">
+            {demoData[activeTab].map((item) => (
+              <Card key={item.id} className="border-none shadow-sm">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <UserAvatar 
+                      user={{ id: '', name: item.userName, avatarUrl: item.userAvatar, balance: 0, createdAt: null } as any} 
+                      className="h-10 w-10" 
+                    />
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{item.userName}</span>
+                        <div className="text-muted-foreground opacity-70">
+                          {renderIcon(item.type)}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">{item.date}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-primary">{item.reward}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Винагорода</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {demoData[activeTab].length === 0 && (
+              <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+                Немає активних записів у цій категорії
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </div>
     </div>
   );
 }
