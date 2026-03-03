@@ -2,7 +2,6 @@
 {
   "entities": {
     "UserProfile": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "UserProfile",
       "type": "object",
       "description": "Represents a user's profile in the ConnectU application.",
@@ -27,8 +26,35 @@
       },
       "required": ["id", "email", "name", "createdAt", "balance"]
     },
+    "CommunicationRequest": {
+      "title": "CommunicationRequest",
+      "type": "object",
+      "description": "Represents a non-video communication request (Q&A or File).",
+      "properties": {
+        "id": { "type": "string" },
+        "callerId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "type": { "type": "string", "enum": ["text", "file"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "completed", "declined", "expired"] },
+        "offerId": { "type": "string" },
+        "pricingSnapshot": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Message": {
+      "title": "Message",
+      "type": "object",
+      "description": "A single message in a communication thread.",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "fileUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "WalletLedgerEntry": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "WalletLedgerEntry",
       "type": "object",
       "description": "Represents a single transaction in the wallet ledger.",
@@ -42,43 +68,8 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "status": { "type": "string", "enum": ["posted", "pending", "failed"] },
         "callId": { "type": "string" },
-        "kind": { "type": "string" },
-        "metadata": { "type": "object" }
-      },
-      "required": ["uid", "type", "amount", "status"]
-    },
-    "Call": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Call",
-      "type": "object",
-      "description": "Represents a call between two users.",
-      "properties": {
-        "id": { "type": "string" },
-        "callerId": { "type": "string" },
-        "receiverId": { "type": "string" },
-        "callerName": { "type": "string" },
-        "status": { "type": "string", "enum": ["ringing", "accepted", "ended", "declined", "missed", "expired"] },
-        "roomUrl": { "type": "string" },
-        "roomName": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "createdAtTs": { "type": "object" },
-        "updatedAt": { "type": "string", "format": "date-time" },
-        "acceptedAtTs": { "type": "object" },
-        "endedAtTs": { "type": "object" },
-        "offerId": { "type": "string" },
-        "billedMinutes": { "type": "number" },
-        "billedCoins": { "type": "number" },
-        "endReason": { "type": "string" },
-        "pricingSnapshot": {
-          "type": "object",
-          "properties": {
-            "type": { "type": "string" },
-            "ratePerMinute": { "type": "number" },
-            "currency": { "type": "string", "default": "COIN" }
-          }
-        }
-      },
-      "required": ["callerId", "receiverId", "status", "roomName", "roomUrl"]
+        "kind": { "type": "string" }
+      }
     }
   },
   "auth": {
@@ -88,27 +79,19 @@
     "structure": [
       {
         "path": "/users/{userId}",
-        "definition": {
-          "entityName": "UserProfile",
-          "schema": { "$ref": "#/backend/entities/UserProfile" },
-          "description": "Stores user profile information."
-        }
+        "definition": { "entityName": "UserProfile", "schema": { "$ref": "#/backend/entities/UserProfile" } }
       },
       {
-        "path": "/calls/{callId}",
-        "definition": {
-          "entityName": "Call",
-          "schema": { "$ref": "#/backend/entities/Call" },
-          "description": "Stores information about calls between users."
-        }
+        "path": "/communicationRequests/{requestId}",
+        "definition": { "entityName": "CommunicationRequest", "schema": { "$ref": "#/backend/entities/CommunicationRequest" } }
+      },
+      {
+        "path": "/communicationRequests/{requestId}/messages/{messageId}",
+        "definition": { "entityName": "Message", "schema": { "$ref": "#/backend/entities/Message" } }
       },
       {
         "path": "/walletLedger/{entryId}",
-        "definition": {
-          "entityName": "WalletLedgerEntry",
-          "schema": { "$ref": "#/backend/entities/WalletLedgerEntry" },
-          "description": "Stores transaction history."
-        }
+        "definition": { "entityName": "WalletLedgerEntry", "schema": { "$ref": "#/backend/entities/WalletLedgerEntry" } }
       }
     ]
   }

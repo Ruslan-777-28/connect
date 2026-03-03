@@ -20,10 +20,30 @@ export type UserProfile = {
   availability?: Availability;
 };
 
+export type Message = {
+  id: string;
+  senderId: string;
+  text?: string;
+  fileUrl?: string;
+  createdAt: Timestamp | any;
+};
+
+export type CommunicationRequest = {
+  id: string;
+  callerId: string;
+  receiverId: string;
+  type: 'text' | 'file' | 'video';
+  status: 'pending' | 'accepted' | 'completed' | 'declined' | 'expired' | 'ringing';
+  offerId: string;
+  pricingSnapshot: any;
+  createdAt: Timestamp | any;
+  expiresAt: Timestamp | any;
+};
+
 export type WalletLedgerEntry = {
   id: string;
   uid: string;
-  type: 'topup' | 'call_payment' | 'payout' | 'debit' | 'credit';
+  type: 'topup' | 'call_payment' | 'payout';
   amount: number;
   currency: string;
   balanceAfter?: number;
@@ -31,51 +51,7 @@ export type WalletLedgerEntry = {
   status: 'posted' | 'pending' | 'failed';
   callId?: string;
   kind?: string;
-  metadata?: {
-    callId?: string;
-    description?: string;
-    minutes?: number;
-    ratePerMinute?: number;
-  };
-};
-
-export type PricingSnapshot = {
-  type: 'video' | 'file' | 'text';
-  categoryId: string;
-  subcategoryId: string;
-  currency: 'COIN' | string;
-  ratePerMinute?: number | null;
-  ratePerFile?: number | null;
-  ratePerQuestion?: number | null;
-  capturedAt: Timestamp | any;
-};
-
-export type Call = {
-  id: string;
-  callerId: string;
-  receiverId: string;
-  callerName?: string;
-  status: 'ringing' | 'accepted' | 'ended' | 'declined' | 'missed' | 'expired';
-  roomUrl: string;
-  roomName: string;
-  createdAt: Timestamp;
-  createdAtTs?: Timestamp;
-  updatedAt: Timestamp;
-  acceptedAt?: Timestamp | null;
-  acceptedAtTs?: Timestamp | null;
-  endedAt?: Timestamp | null;
-  endedAtTs?: Timestamp | null;
-  expiresAt?: Timestamp;
-  caller?: UserProfile;
-  callerActingAs?: 'client' | 'pro';
-  receiverActingAs?: 'client' | 'pro';
-  endReason?: string | null;
-  endedBy?: string | null;
-  offerId?: string;
-  pricingSnapshot?: PricingSnapshot;
-  billedMinutes?: number;
-  billedCoins?: number;
-  lastBilledAt?: Timestamp | null;
+  metadata?: any;
 };
 
 export type Pricing = {
@@ -95,4 +71,13 @@ export type CommunicationOffer = {
   status: 'active' | 'inactive';
   createdAt: Timestamp | any;
   updatedAt: Timestamp | any;
+};
+
+export type Call = CommunicationRequest & {
+  roomUrl?: string;
+  roomName?: string;
+  billedMinutes?: number;
+  billedCoins?: number;
+  acceptedAtTs?: Timestamp | null;
+  endedAtTs?: Timestamp | null;
 };
