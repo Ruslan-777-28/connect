@@ -223,9 +223,10 @@ export default function WalletPage() {
                         <span className="text-[10px] text-muted-foreground">{item.date}</span>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end">
                       <div className="text-sm font-bold text-primary">{item.reward}</div>
-                      <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Винагорода</div>
+                      <div className="text-[9px] uppercase tracking-wider text-muted-foreground leading-tight">Винагорода</div>
+                      <div className="text-[8px] text-muted-foreground italic opacity-70">(зарезервована)</div>
                     </div>
                   </div>
 
