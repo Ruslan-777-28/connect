@@ -85,45 +85,41 @@ export default function WalletPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-4">
-          <div className="flex gap-3">
+          <div className="grid grid-cols-3 gap-2">
             <Button 
               variant="secondary" 
-              className="flex-1 bg-white/20 hover:bg-white/30 border-none text-white"
+              className="bg-white/20 hover:bg-white/30 border-none text-white px-2 py-6 flex flex-col gap-1 h-auto"
               onClick={handleTopUp}
               disabled={isTopUpLoading}
             >
               {isTopUpLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <ArrowDownLeft className="mr-2 h-4 w-4" />
+                <ArrowDownLeft className="h-4 w-4" />
               )}
-              Поповнити
+              <span className="text-[10px] uppercase font-bold">Поповнити</span>
             </Button>
+            
             <Button 
               variant="secondary" 
-              className="flex-1 bg-white/20 hover:bg-white/30 border-none text-white opacity-50 cursor-not-allowed"
+              className="bg-white/20 hover:bg-white/30 border-none text-white px-2 py-6 flex flex-col gap-1 h-auto opacity-50 cursor-not-allowed"
               disabled
             >
-              <ArrowUpRight className="mr-2 h-4 w-4" /> Вивести
+              <ArrowUpRight className="h-4 w-4" />
+              <span className="text-[10px] uppercase font-bold">Вивести</span>
+            </Button>
+
+            <Button 
+              variant="secondary" 
+              className="bg-white/20 hover:bg-white/30 border-none text-white px-2 py-6 flex flex-col gap-1 h-auto"
+              onClick={() => router.push('/wallet/transactions')}
+            >
+              <History className="h-4 w-4" />
+              <span className="text-[10px] uppercase font-bold">Транзакції</span>
             </Button>
           </div>
         </CardContent>
       </Card>
-
-      <Button 
-        variant="outline" 
-        size="lg"
-        className="w-full h-16 justify-between px-6 text-lg font-semibold group border-primary/20 hover:border-primary hover:bg-primary/5 transition-all"
-        onClick={() => router.push('/wallet/transactions')}
-      >
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-full bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-            <History className="h-6 w-6" />
-          </div>
-          <span>Історія транзакцій</span>
-        </div>
-        <ArrowUpRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-      </Button>
 
       <div className="mt-12 text-center">
         <p className="text-sm text-muted-foreground">
