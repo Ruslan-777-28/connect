@@ -7,7 +7,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { UserProfile } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2 } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -99,7 +99,7 @@ export default function WalletPage() {
               ) : (
                 <ArrowDownLeft className="h-4 w-4" />
               )}
-              <span className="text-[10px] uppercase font-bold">Поповнити</span>
+              <span className="text-[10px] uppercase font-bold text-center">Поповнити</span>
             </Button>
 
             <Button 
@@ -108,7 +108,7 @@ export default function WalletPage() {
               onClick={() => router.push('/wallet/transactions')}
             >
               <History className="h-4 w-4" />
-              <span className="text-[10px] uppercase font-bold">Транзакції</span>
+              <span className="text-[10px] uppercase font-bold text-center">Транзакції</span>
             </Button>
             
             <Button 
@@ -117,9 +117,38 @@ export default function WalletPage() {
               disabled
             >
               <ArrowUpRight className="h-4 w-4" />
-              <span className="text-[10px] uppercase font-bold">Вивести</span>
+              <span className="text-[10px] uppercase font-bold text-center">Вивести</span>
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* New card for debts and pending actions */}
+      <Card className="mb-8 border-primary/10 shadow-sm">
+        <CardContent className="p-4 grid grid-cols-3 gap-2">
+          <Button 
+            variant="outline" 
+            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
+          >
+            <ArrowUpRight className="h-4 w-4 text-destructive" />
+            <span className="text-[10px] uppercase font-bold text-center">Я винен</span>
+          </Button>
+
+          <Button 
+            variant="outline" 
+            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
+          >
+            <Clock className="h-4 w-4 text-primary" />
+            <span className="text-[10px] uppercase font-bold text-center">На розгляді</span>
+          </Button>
+
+          <Button 
+            variant="outline" 
+            className="flex flex-col items-center gap-1 h-auto py-4 border-dashed"
+          >
+            <ArrowDownLeft className="h-4 w-4 text-green-600" />
+            <span className="text-[10px] uppercase font-bold text-center">Мені винні</span>
+          </Button>
         </CardContent>
       </Card>
 
