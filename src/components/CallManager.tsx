@@ -40,7 +40,6 @@ export function CallManager() {
   const router = useRouter();
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
-  const [debugText, setDebugText] = useState('Initializing...');
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
   
   const busyCallIdRef = useRef<string | null>(null);
@@ -81,7 +80,6 @@ export function CallManager() {
   // Main listener for Incoming (Ringing) calls
   useEffect(() => {
     if (!user?.uid || !firestore) {
-      setDebugText('No User/Auth');
       return;
     }
 
@@ -102,15 +100,12 @@ export function CallManager() {
             const timeB = b.expiresAt?.toMillis?.() || 0;
             return timeB - timeA;
         });
-
-      setDebugText(`Mounted: ${user.uid.slice(0, 5)}... | Snap: ${snap.size} | Ringing: ${ringingCalls.length}`);
       
       const topRingingCall = ringingCalls[0];
       setIncomingCall(topRingingCall || null);
 
     }, (err) => {
       console.error('Call listener error:', err);
-      setDebugText(`Error: ${err.message}`);
     });
 
     return () => unsub();
@@ -164,11 +159,6 @@ export function CallManager() {
 
   return (
     <>
-      {/* Debug Badge */}
-      <div className="fixed top-2 right-2 bg-black text-white text-[10px] p-2 z-[300] rounded opacity-80 pointer-events-none font-mono">
-        {debugText}
-      </div>
-
       {/* Incoming Call Modal */}
       {incomingCall && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
