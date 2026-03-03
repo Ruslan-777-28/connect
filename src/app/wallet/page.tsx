@@ -202,30 +202,55 @@ export default function WalletPage() {
           </CardContent>
         </Card>
 
-        <ScrollArea className="h-[400px] w-full rounded-xl border border-primary/5 bg-muted/20 p-4">
+        <ScrollArea className="h-[450px] w-full rounded-xl border border-primary/5 bg-muted/20 p-4">
           <div className="space-y-4">
             {demoData[activeTab].map((item) => (
-              <Card key={item.id} className="border-none shadow-sm">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <UserAvatar 
-                      user={{ id: '', name: item.userName, avatarUrl: item.userAvatar, balance: 0, createdAt: null } as any} 
-                      className="h-10 w-10" 
-                    />
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold">{item.userName}</span>
-                        <div className="text-muted-foreground opacity-70">
-                          {renderIcon(item.type)}
+              <Card key={item.id} className="border-none shadow-sm overflow-hidden">
+                <CardContent className="p-4 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <UserAvatar 
+                        user={{ id: '', name: item.userName, avatarUrl: item.userAvatar, balance: 0, createdAt: null } as any} 
+                        className="h-10 w-10" 
+                      />
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold">{item.userName}</span>
+                          <div className="text-muted-foreground opacity-70">
+                            {renderIcon(item.type)}
+                          </div>
                         </div>
+                        <span className="text-[10px] text-muted-foreground">{item.date}</span>
                       </div>
-                      <span className="text-[10px] text-muted-foreground">{item.date}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-primary">{item.reward}</div>
+                      <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Винагорода</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm font-bold text-primary">{item.reward}</div>
-                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground">Винагорода</div>
-                  </div>
+
+                  {activeTab === 'pending' && (
+                    <div className="flex items-center gap-1 pt-1">
+                      <Button 
+                        size="sm" 
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white h-8 text-[11px] rounded-lg font-bold"
+                      >
+                        Прийняти
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white h-8 text-[11px] rounded-lg font-bold"
+                      >
+                        Деталі
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="flex-1 bg-red-600 hover:bg-red-700 text-white h-8 text-[11px] rounded-lg font-bold"
+                      >
+                        Відхилити
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}
