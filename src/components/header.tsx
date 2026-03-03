@@ -1,11 +1,12 @@
 'use client';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
-import { Menu } from 'lucide-react';
+import { Menu, MessageSquare, Bell } from 'lucide-react';
 import { Button } from './ui/button';
 import { AvailabilitySwitch } from './AvailabilitySwitch';
 import { useUser } from '@/firebase';
 import { useAvailability } from '@/hooks/useAvailability';
 import { Skeleton } from './ui/skeleton';
+import Link from 'next/link';
 
 export function Header() {
   const { isMobile } = useSidebar();
@@ -42,8 +43,22 @@ export function Header() {
         ) : null}
       </div>
 
-      {/* Empty div for grid alignment */}
-      <div />
+      <div className="flex justify-end gap-1">
+        {user && (
+          <>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/chats">
+                <MessageSquare className="h-5 w-5" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/notifications">
+                <Bell className="h-5 w-5" />
+              </Link>
+            </Button>
+          </>
+        )}
+      </div>
     </header>
   );
 }

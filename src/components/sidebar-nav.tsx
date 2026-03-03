@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { doc } from 'firebase/firestore';
-import { Home, User, LogOut, LogIn, UserPlus } from 'lucide-react';
+import { Home, User, LogOut, LogIn, UserPlus, MessageSquare, Bell } from 'lucide-react';
 import {
   useUser,
   useAuth,
@@ -57,6 +57,8 @@ export function SidebarNav() {
   const navLinks = user
     ? [
         { href: '/', label: 'Home', icon: Home },
+        { href: '/chats', label: 'Chats', icon: MessageSquare },
+        { href: '/notifications', label: 'Notifications', icon: Bell },
         { href: '/profile', label: 'Profile', icon: User },
       ]
     : [];
