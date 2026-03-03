@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 
 export default function WalletPage() {
-  const { user } = userUser();
+  const { user } = useUser();
   const firestore = useFirestore();
   const app = useFirebaseApp();
   const router = useRouter();
