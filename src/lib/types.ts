@@ -13,6 +13,7 @@ export type UserProfile = {
   bio?: string;
   avatarUrl?: string;
   balance: number;
+  held: number;
   currency?: 'COIN' | string;
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
@@ -20,22 +21,46 @@ export type UserProfile = {
   availability?: Availability;
 };
 
+export type MessageKind = 'question' | 'answer' | 'file' | 'system';
+
 export type Message = {
   id: string;
   senderId: string;
+  kind: MessageKind;
   text?: string;
-  fileUrl?: string;
+  fileMeta?: any;
   createdAt: Timestamp | any;
 };
 
 export type CommunicationRequest = {
   id: string;
-  callerId: string;
-  receiverId: string;
-  type: 'text' | 'file' | 'video';
-  status: 'pending' | 'accepted' | 'completed' | 'declined' | 'expired' | 'ringing';
+  initiatorId: string;
+  authorId: string;
+  payerId: string;
+  payeeId: string;
+  type: 'video' | 'text' | 'file';
+  status: 'pending' | 'accepted' | 'answered' | 'completed' | 'declined' | 'expired' | 'ringing';
   offerId: string;
   pricingSnapshot: any;
+  reservedCoins: number;
+  holdId: string;
+  createdAt: Timestamp | any;
+  expiresAt: Timestamp | any;
+  answeredAt?: Timestamp | any;
+  completedAt?: Timestamp | any;
+  lastMessageAt: Timestamp | any;
+  lastMessagePreview?: string;
+  fileMeta?: any;
+};
+
+export type WalletHold = {
+  id: string;
+  uid: string;
+  amount: number;
+  currency: string;
+  status: 'held' | 'captured' | 'released';
+  refType: string;
+  refId: string;
   createdAt: Timestamp | any;
   expiresAt: Timestamp | any;
 };
@@ -80,4 +105,5 @@ export type Call = CommunicationRequest & {
   billedCoins?: number;
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
+  caller?: UserProfile; // Added for UI helpers
 };

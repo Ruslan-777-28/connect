@@ -12,6 +12,7 @@
         "avatarUrl": { "type": "string", "format": "uri" },
         "bio": { "type": "string" },
         "balance": { "type": "number", "default": 0 },
+        "held": { "type": "number", "default": 0, "description": "Reserved coins for pending requests" },
         "currency": { "type": "string", "default": "COIN" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" },
@@ -29,17 +30,25 @@
     "CommunicationRequest": {
       "title": "CommunicationRequest",
       "type": "object",
-      "description": "Represents a non-video communication request (Q&A or File).",
+      "description": "Represents a communication request (Video, Q&A or File).",
       "properties": {
         "id": { "type": "string" },
-        "callerId": { "type": "string" },
-        "receiverId": { "type": "string" },
-        "type": { "type": "string", "enum": ["text", "file"] },
-        "status": { "type": "string", "enum": ["pending", "accepted", "completed", "declined", "expired"] },
+        "initiatorId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "payerId": { "type": "string" },
+        "payeeId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "text", "file"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "answered", "completed", "declined", "expired", "ringing"] },
         "offerId": { "type": "string" },
         "pricingSnapshot": { "type": "object" },
+        "reservedCoins": { "type": "number" },
+        "holdId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "expiresAt": { "type": "string", "format": "date-time" }
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "answeredAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "lastMessagePreview": { "type": "string" }
       }
     },
     "Message": {
@@ -49,9 +58,26 @@
       "properties": {
         "id": { "type": "string" },
         "senderId": { "type": "string" },
+        "kind": { "type": "string", "enum": ["question", "answer", "file", "system"] },
         "text": { "type": "string" },
-        "fileUrl": { "type": "string" },
+        "fileMeta": { "type": "object" },
         "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "WalletHold": {
+      "title": "WalletHold",
+      "type": "object",
+      "description": "Reserved amount on user's balance.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "default": "COIN" },
+        "status": { "type": "string", "enum": ["held", "captured", "released"] },
+        "refType": { "type": "string" },
+        "refId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
       }
     },
     "WalletLedgerEntry": {
@@ -88,6 +114,10 @@
       {
         "path": "/communicationRequests/{requestId}/messages/{messageId}",
         "definition": { "entityName": "Message", "schema": { "$ref": "#/backend/entities/Message" } }
+      },
+      {
+        "path": "/walletHolds/{holdId}",
+        "definition": { "entityName": "WalletHold", "schema": { "$ref": "#/backend/entities/WalletHold" } }
       },
       {
         "path": "/walletLedger/{entryId}",

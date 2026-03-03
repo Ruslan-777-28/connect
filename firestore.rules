@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -14,10 +15,7 @@ service cloud.firestore {
 
     // ---------- Users ----------
     match /users/{uid} {
-      // Будь-який авторизований користувач може бачити профілі інших
       allow get, list: if isSignedIn();
-      
-      // Створювати та редагувати профіль може тільки сам користувач
       allow create: if isSelf(uid);
       allow update: if isSelf(uid);
       allow delete: if false;
@@ -25,10 +23,13 @@ service cloud.firestore {
 
     // ---------- Wallet Ledger ----------
     match /walletLedger/{txId} {
-      // Користувач бачить тільки свою історію транзакцій. 
       allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
-      
-      // Записи в реєстр робить тільки сервер (Cloud Functions)
+      allow create, update, delete: if false;
+    }
+
+    // ---------- Wallet Holds ----------
+    match /walletHolds/{holdId} {
+      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create, update, delete: if false;
     }
 
@@ -39,7 +40,28 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
 
-    // ---------- Calls (1:1 video) ----------
+    // ---------- Communication Requests & Messages ----------
+    match /communicationRequests/{requestId} {
+      function isParticipant() {
+        return isSignedIn() && (
+          resource.data.initiatorId == request.auth.uid || 
+          resource.data.authorId == request.auth.uid
+        );
+      }
+      
+      allow read: if isParticipant();
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && (
+          get(/databases/$(database)/documents/communicationRequests/$(requestId)).data.initiatorId == request.auth.uid || 
+          get(/databases/$(database)/documents/communicationRequests/$(requestId)).data.authorId == request.auth.uid
+        );
+        allow create, update, delete: if false;
+      }
+    }
+
+    // ---------- Calls (Legacy fallback or specific video rules) ----------
     match /calls/{callId} {
       function isCallParticipant() {
         return isSignedIn() && (
@@ -47,21 +69,10 @@ service cloud.firestore {
           resource.data.receiverId == request.auth.uid
         );
       }
-      
-      // Тільки учасники дзвінка можуть його бачити
       allow read: if isCallParticipant();
-      
-      // Стан дзвінків та білінг змінюються тільки через серверні функції
       allow create, update, delete: if false;
     }
     
-    // ---------- Daily Rooms Mapping ----------
-    match /dailyRooms/{roomName} {
-      allow read: if isSignedIn();
-      allow write: if false;
-    }
-
-    // ---------- Default: deny all other access ----------
     match /{document=**} {
       allow read, write: if false;
     }
