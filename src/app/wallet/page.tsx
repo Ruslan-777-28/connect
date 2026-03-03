@@ -2,15 +2,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebaseApp } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebaseApp, useCollection } from '@/firebase';
+import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import type { UserProfile } from '@/lib/types';
+import type { UserProfile, WalletLedgerEntry } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2 } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 export default function WalletPage() {
   const { user } = useUser();
@@ -20,26 +22,30 @@ export default function WalletPage() {
 
   const [isTopUpLoading, setIsTopUpLoading] = useState(false);
 
+  // Profile data
   const userDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'users', user.uid) : null),
     [user, firestore]
   );
-  
-  const { data: profile, isLoading } = useDoc<UserProfile>(userDocRef);
+  const { data: profile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
 
-  /**
-   * Обробник поповнення балансу.
-   * Викликає Cloud Function 'devTopUp', яка додає 100 COIN.
-   */
+  // Ledger history query
+  const ledgerQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'walletLedger'),
+      where('uid', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    ) : null),
+    [user, firestore]
+  );
+  const { data: ledger, isLoading: isLedgerLoading } = useCollection<WalletLedgerEntry>(ledgerQuery);
+
   const handleTopUp = async () => {
     if (!user) return;
     setIsTopUpLoading(true);
     try {
-      // Ініціалізація функцій з вказанням регіону (має збігатися з налаштуваннями на бекенді)
       const functions = getFunctions(app, 'us-central1');
       const devTopUp = httpsCallable(functions, 'devTopUp');
-      
-      // Виклик функції
       const result: any = await devTopUp({ amount: 100 });
       
       if (result.data?.ok) {
@@ -60,7 +66,7 @@ export default function WalletPage() {
     }
   };
 
-  if (isLoading) {
+  if (isProfileLoading) {
     return (
       <div className="container mx-auto max-w-2xl p-4 py-8">
         <Skeleton className="h-48 w-full rounded-2xl" />
@@ -122,18 +128,62 @@ export default function WalletPage() {
             <History className="h-5 w-5 text-primary" />
             Історія транзакцій
           </h2>
-          <Button variant="ghost" size="sm" className="text-primary font-semibold">
-            Всі
-          </Button>
         </div>
 
-        <Card className="border-dashed">
-          <CardContent className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
-            <History className="h-12 w-12 opacity-20" />
-            <p>У вас поки немає транзакцій.</p>
-            <p className="text-xs">Тут з'являться дані про ваші дзвінки та поповнення.</p>
-          </CardContent>
-        </Card>
+        {isLedgerLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-20 w-full rounded-xl" />
+            ))}
+          </div>
+        ) : ledger && ledger.length > 0 ? (
+          <div className="space-y-3">
+            {ledger.map((entry) => (
+              <Card key={entry.id} className="overflow-hidden">
+                <CardContent className="p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "p-2 rounded-full",
+                      entry.amount > 0 ? "bg-green-100 text-green-600" : "bg-red-100 text-red-600"
+                    )}>
+                      {entry.type === 'topup' && <ArrowDownLeft className="h-4 w-4" />}
+                      {entry.type === 'call_payment' && <ArrowUpRight className="h-4 w-4" />}
+                      {entry.type === 'payout' && <ArrowDownLeft className="h-4 w-4" />}
+                      {entry.kind === 'call_prepay' && <ArrowRightLeft className="h-4 w-4" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold capitalize">
+                        {entry.kind ? entry.kind.replace('_', ' ') : entry.type}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.createdAt?.toDate ? entry.createdAt.toDate().toLocaleString() : 'Just now'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn(
+                      "font-bold",
+                      entry.amount > 0 ? "text-green-600" : "text-red-600"
+                    )}>
+                      {entry.amount > 0 ? '+' : ''}{entry.amount} {entry.currency}
+                    </p>
+                    <Badge variant="outline" className="text-[10px] h-4">
+                      {entry.status}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="border-dashed">
+            <CardContent className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+              <History className="h-12 w-12 opacity-20" />
+              <p>У вас поки немає транзакцій.</p>
+              <p className="text-xs">Тут з'являться дані про ваші дзвінки та поповнення.</p>
+            </CardContent>
+          </Card>
+        )}
       </section>
     </div>
   );
