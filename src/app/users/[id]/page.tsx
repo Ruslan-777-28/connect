@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2 } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, MoreHorizontal } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -152,90 +152,143 @@ export default function UserProfilePage() {
         </CardContent>
       </Card>
 
-      <div className="space-y-6">
-        <h2 className="text-2xl font-bold tracking-tight">Пропозиції</h2>
-        
-        {loadingOffers ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-48 w-full" />
-          </div>
-        ) : offers && offers.length > 0 ? (
-          <div className="space-y-8">
-            <Carousel className="w-full">
-              <CarouselContent className="-ml-2">
-                {categories.map((cat) => (
-                  <CarouselItem key={cat} className="pl-2 basis-auto">
-                    <Button 
-                      variant={selectedCategory === cat ? "default" : "outline"} 
-                      className="rounded-full" 
-                      onClick={() => setSelectedCategory(cat)}
-                    >
-                      {cat}
-                    </Button>
-                  </CarouselItem>
-                ))}
-              </CarouselContent>
-            </Carousel>
-
+      <div className="space-y-12">
+        {/* Секція Пропозицій */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold tracking-tight">Пропозиції</h2>
+          
+          {loadingOffers ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              {filteredOffers.map((offer) => (
-                <Card key={offer.id} className="border-primary/10 hover:border-primary/30 transition-colors">
-                  <CardContent className="p-6 flex flex-col h-full gap-4">
-                    <div className="flex justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-full bg-primary/10 p-2 text-primary">
-                          {offer.type === 'video' ? (
-                            <Video className="h-5 w-5" />
-                          ) : offer.type === 'file' ? (
-                            <FileText className="h-5 w-5" />
-                          ) : (
-                            <HelpCircle className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-sm capitalize">{offer.subcategoryId}</h3>
-                          <span className="text-[10px] text-muted-foreground uppercase">{offer.type}</span>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold">
-                          {offer.pricing.ratePerMinute || offer.pricing.ratePerFile || offer.pricing.ratePerQuestion} COIN
-                        </div>
-                        <span className="text-[10px] text-muted-foreground">/{offer.type === 'video' ? 'хв' : offer.type === 'file' ? 'файл' : 'пит'}</span>
-                      </div>
-                    </div>
-
-                    <Button 
-                      className={cn(
-                        "w-full mt-auto font-bold", 
-                        offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground"
-                      )}
-                      disabled={isCalling || (offer.type === 'video' && !online)}
-                      onClick={() => {
-                        if (offer.type === 'video') {
-                          handleCallClick(offer.id);
-                        } else {
-                          handleOrderClick(offer);
-                        }
-                      }}
-                    >
-                      {offer.type === 'video' ? (
-                        <><Phone className="mr-2 h-4 w-4" /> Виклик</>
-                      ) : (
-                        <><Send className="mr-2 h-4 w-4" /> Замовити</>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
+              <Skeleton className="h-48 w-full" />
+              <Skeleton className="h-48 w-full" />
             </div>
+          ) : offers && offers.length > 0 ? (
+            <div className="space-y-8">
+              <Carousel className="w-full">
+                <CarouselContent className="-ml-2">
+                  {categories.map((cat) => (
+                    <CarouselItem key={cat} className="pl-2 basis-auto">
+                      <Button 
+                        variant={selectedCategory === cat ? "default" : "outline"} 
+                        className="rounded-full" 
+                        onClick={() => setSelectedCategory(cat)}
+                      >
+                        {cat}
+                      </Button>
+                    </CarouselItem>
+                  ))}
+                </CarouselContent>
+              </Carousel>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {filteredOffers.map((offer) => (
+                  <Card key={offer.id} className="border-primary/10 hover:border-primary/30 transition-colors">
+                    <CardContent className="p-6 flex flex-col h-full gap-4">
+                      <div className="flex justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-full bg-primary/10 p-2 text-primary">
+                            {offer.type === 'video' ? (
+                              <Video className="h-5 w-5" />
+                            ) : offer.type === 'file' ? (
+                              <FileText className="h-5 w-5" />
+                            ) : (
+                              <HelpCircle className="h-5 w-5" />
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-sm capitalize">{offer.subcategoryId}</h3>
+                            <span className="text-[10px] text-muted-foreground uppercase">{offer.type}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold">
+                            {offer.pricing.ratePerMinute || offer.pricing.ratePerFile || offer.pricing.ratePerQuestion} COIN
+                          </div>
+                          <span className="text-[10px] text-muted-foreground">/{offer.type === 'video' ? 'хв' : offer.type === 'file' ? 'файл' : 'пит'}</span>
+                        </div>
+                      </div>
+
+                      <Button 
+                        className={cn(
+                          "w-full mt-auto font-bold", 
+                          offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground"
+                        )}
+                        disabled={isCalling || (offer.type === 'video' && !online)}
+                        onClick={() => {
+                          if (offer.type === 'video') {
+                            handleCallClick(offer.id);
+                          } else {
+                            handleOrderClick(offer);
+                          }
+                        }}
+                      >
+                        {offer.type === 'video' ? (
+                          <><Phone className="mr-2 h-4 w-4" /> Виклик</>
+                        ) : (
+                          <><Send className="mr-2 h-4 w-4" /> Замовити</>
+                        )}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center text-muted-foreground py-12 border border-dashed rounded-xl">
+              Немає доступних пропозицій.
+            </p>
+          )}
+        </section>
+
+        {/* Секція Публікацій */}
+        <section className="space-y-6">
+          <h2 className="text-2xl font-bold tracking-tight">Публікації</h2>
+          
+          <div className="grid gap-6">
+            <Card className="overflow-hidden border-primary/5 hover:border-primary/15 transition-all">
+              <CardContent className="p-0">
+                <div className="aspect-video w-full bg-muted flex items-center justify-center">
+                  <Layout className="h-10 w-10 text-muted-foreground/30" />
+                </div>
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xl font-bold">Основи успішної комунікації</h3>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="text-muted-foreground leading-relaxed line-clamp-3">
+                    У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим і як правильно ставити запитання, щоб отримати максимум інформації...
+                  </p>
+                  <div className="mt-6 flex items-center gap-4 text-[11px] text-muted-foreground uppercase font-bold tracking-widest">
+                    <span className="bg-muted px-2 py-1 rounded">12 ВЕРЕСНЯ</span>
+                    <span>•</span>
+                    <span>154 ПЕРЕГЛЯДИ</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden border-primary/5 opacity-80">
+              <CardContent className="p-0">
+                <div className="aspect-video w-full bg-muted flex items-center justify-center">
+                  <Layout className="h-10 w-10 text-muted-foreground/30" />
+                </div>
+                <div className="p-6">
+                  <h3 className="text-xl font-bold mb-3">Нові тренди в дизайні 2024</h3>
+                  <p className="text-muted-foreground leading-relaxed line-clamp-2">
+                    Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року...
+                  </p>
+                  <div className="mt-6 flex items-center gap-4 text-[11px] text-muted-foreground uppercase font-bold tracking-widest">
+                    <span className="bg-muted px-2 py-1 rounded">05 ВЕРЕСНЯ</span>
+                    <span>•</span>
+                    <span>89 ПЕРЕГЛЯДІВ</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        ) : (
-          <p className="text-center text-muted-foreground py-12 border border-dashed rounded-xl">
-            Немає доступних пропозицій.
-          </p>
-        )}
+        </section>
       </div>
 
       {/* Order Dialog */}
