@@ -14,18 +14,27 @@ service firebase.storage {
 
     // Rules for user avatars
     match /avatars/{userId} {
-      allow read: if isSignedIn();
+      allow read: if true; 
       allow write: if isSelf(userId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
     }
 
-    // uploads/{uid}/... only by owner, only JPEG, size <= 10MB
+    // Rules for post images
+    match /posts/{userId}/{allPaths=**} {
+      allow read: if true; 
+      allow write: if isSelf(userId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // uploads/{uid}/... used for communication requests (files)
     match /uploads/{uid}/{allPaths=**} {
-      allow read: if isSelf(uid);
+      // Participants need to read, so we allow signed in users for MVP
+      allow read: if isSignedIn();
       allow write: if isSelf(uid)
         && request.resource.size < 10 * 1024 * 1024
-        && request.resource.contentType == "image/jpeg";
+        && request.resource.contentType.matches('image/.*');
     }
 
     // deny all other paths by default
