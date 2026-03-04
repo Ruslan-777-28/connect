@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -24,7 +23,7 @@ export default function FavoritesPage() {
       where('uid', '==', user.uid),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   const { data: favorites, isLoading: loadingFavorites } = useCollection<Favorite>(favoritesQuery);
@@ -36,7 +35,6 @@ export default function FavoritesPage() {
 
   // Fetch actual data for favorites
   // For MVP, we'll fetch all items and filter locally since Firestore IN query has limits
-  // and we want to keep it simple without complex multi-doc fetching hooks for now.
   const allUsersQuery = useMemoFirebase(() => query(collection(firestore, 'users')), [firestore]);
   const allPostsQuery = useMemoFirebase(() => query(collection(firestore, 'posts')), [firestore]);
   const allProductsQuery = useMemoFirebase(() => query(collection(firestore, 'products')), [firestore]);

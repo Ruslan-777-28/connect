@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo } from 'react';
@@ -27,7 +26,7 @@ export default function ProfilePage() {
 
   const userDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'users', user.uid) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   
   const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
@@ -38,7 +37,7 @@ export default function ProfilePage() {
       where('ownerId', '==', user.uid),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
 
@@ -48,7 +47,7 @@ export default function ProfilePage() {
       where('authorId', '==', user.uid),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   const { data: myPosts, isLoading: loadingPosts } = useCollection<Post>(postsQuery);
 
@@ -58,7 +57,7 @@ export default function ProfilePage() {
       where('authorId', '==', user.uid),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   const { data: myProducts, isLoading: loadingProducts } = useCollection<DigitalProduct>(productsQuery);
 
@@ -218,8 +217,7 @@ export default function ProfilePage() {
                 <Layout className="h-8 w-8 opacity-20" />
                 <p>Ви ще не опублікували жодного посту.</p>
               </CardContent>
-            </Card>
-          )}
+            )}
         </section>
       </div>
     </div>

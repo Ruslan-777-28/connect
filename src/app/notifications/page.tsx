@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -27,7 +26,7 @@ export default function NotificationsPage() {
       where('channel', '==', 'system'),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   const userQuery = useMemoFirebase(
@@ -37,7 +36,7 @@ export default function NotificationsPage() {
       where('channel', '==', 'user'),
       orderBy('createdAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   const { data: systemNotifs, isLoading: loadingSystem } = useCollection<Notification>(systemQuery);

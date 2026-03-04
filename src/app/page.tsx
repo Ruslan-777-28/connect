@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useMemo } from 'react';
@@ -26,7 +25,7 @@ export default function HomePage() {
       firestore && user
         ? query(collection(firestore, 'users'), orderBy('createdAt', 'desc'), limit(10))
         : null,
-    [firestore, user]
+    [firestore, user?.uid]
   );
 
   const postsQuery = useMemoFirebase(
@@ -34,7 +33,7 @@ export default function HomePage() {
       firestore && user
         ? query(collection(firestore, 'posts'), orderBy('createdAt', 'desc'), limit(10))
         : null,
-    [firestore, user]
+    [firestore, user?.uid]
   );
 
   const productsQuery = useMemoFirebase(
@@ -42,7 +41,7 @@ export default function HomePage() {
       firestore && user
         ? query(collection(firestore, 'products'), orderBy('createdAt', 'desc'), limit(10))
         : null,
-    [firestore, user]
+    [firestore, user?.uid]
   );
 
   const { data: users, isLoading: loadingUsers } = useCollection<UserProfile>(usersQuery);

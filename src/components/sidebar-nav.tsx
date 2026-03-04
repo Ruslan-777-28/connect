@@ -1,4 +1,3 @@
-
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -37,7 +36,7 @@ export function SidebarNav() {
 
   const userDocRef = useMemoFirebase(
     () => (user ? doc(firestore, 'users', user.uid) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   const { data: userProfile, isLoading: isProfileLoading } =
@@ -55,7 +54,7 @@ export function SidebarNav() {
       where('readAt', '==', null),
       limit(1)
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   const { data: unreadNotifs } = useCollection(unreadQuery);
   const hasUnread = unreadNotifs && unreadNotifs.length > 0;
