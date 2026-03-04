@@ -37,10 +37,8 @@ function assertNonEmptyString(v, field, maxLen) {
 function assertJpegFileMeta(meta) {
   if (!meta || typeof meta !== "object") throw new HttpsError("invalid-argument", "fileMeta required");
   const { mime, storagePath, size } = meta;
-  if (mime !== "image/jpeg") throw new HttpsError("invalid-argument", "Only JPEG allowed");
-  if (typeof storagePath !== "string" || !storagePath.startsWith("uploads/")) {
-    throw new HttpsError("invalid-argument", "Invalid storagePath");
-  }
+  if (!mime.startsWith("image/")) throw new HttpsError("invalid-argument", "Only images allowed");
+  if (typeof storagePath !== "string") throw new HttpsError("invalid-argument", "Invalid storagePath");
   if (typeof size !== "number" || size <= 0) throw new HttpsError("invalid-argument", "Invalid file size");
   if (size > 10 * 1024 * 1024) throw new HttpsError("invalid-argument", "File too large");
   return { mime, storagePath, size, filename: meta.filename || null };
@@ -87,29 +85,36 @@ exports.createCommunicationRequest = onCall(
   { region: "us-central1" },
   async (request) => {
     const initiatorId = requireAuth(request);
-    const offerId = assertNonEmptyString(request.data?.offerId, "offerId");
+    const offerId = request.data?.offerId ? assertNonEmptyString(request.data.offerId, "offerId") : null;
+    const productId = request.data?.productId ? assertNonEmptyString(request.data.productId, "productId") : null;
     const type = assertNonEmptyString(request.data?.type, "type");
-    const questionText = assertNonEmptyString(request.data?.questionText, "questionText", 500);
+    const questionText = assertNonEmptyString(request.data?.questionText, "questionText", 1000);
 
     const db = admin.firestore();
-    const offerSnap = await db.doc(`communicationOffers/${offerId}`).get();
-    if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
-    const offer = offerSnap.data();
+    let reservedCoins = 0;
+    let authorId = "";
+    let pricingSnapshot = { currency: COIN_CURRENCY };
 
-    if (offer.type !== type) throw new HttpsError("failed-precondition", "OFFER_TYPE_MISMATCH");
-    const authorId = offer.ownerId;
+    if (productId) {
+      const prodSnap = await db.doc(`products/${productId}`).get();
+      if (!prodSnap.exists) throw new HttpsError("not-found", "PRODUCT_NOT_FOUND");
+      const prod = prodSnap.data();
+      reservedCoins = Number(prod.price || 0);
+      authorId = prod.authorId;
+      pricingSnapshot.productPrice = reservedCoins;
+    } else if (offerId) {
+      const offerSnap = await db.doc(`communicationOffers/${offerId}`).get();
+      if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
+      const offer = offerSnap.data();
+      authorId = offer.ownerId;
+      pricingSnapshot.ratePerQuestion = offer.pricing?.ratePerQuestion || null;
+      pricingSnapshot.ratePerFile = offer.pricing?.ratePerFile || null;
+      reservedCoins = type === "text"
+        ? Number(pricingSnapshot.ratePerQuestion || 0)
+        : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
+    }
 
-    const pricingSnapshot = {
-      currency: COIN_CURRENCY,
-      ratePerQuestion: offer.pricing?.ratePerQuestion || null,
-      ratePerFile: offer.pricing?.ratePerFile || null,
-    };
-
-    const reservedCoins = type === "text"
-      ? Number(pricingSnapshot.ratePerQuestion || 0)
-      : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
-
-    if (!Number.isFinite(reservedCoins) || reservedCoins <= 0) {
+    if (!Number.isFinite(reservedCoins) || reservedCoins < 0) {
       throw new HttpsError("failed-precondition", "INVALID_PRICING");
     }
 
@@ -127,18 +132,19 @@ exports.createCommunicationRequest = onCall(
       const held = Number(u.held || 0);
       if (balance - held < reservedCoins) throw new HttpsError("failed-precondition", "INSUFFICIENT_AVAILABLE_BALANCE");
 
-      tx.set(holdRef, {
-        uid: initiatorId,
-        amount: reservedCoins,
-        currency: COIN_CURRENCY,
-        status: "held",
-        refType: "communicationRequest",
-        refId: requestRef.id,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt,
-      });
-
-      tx.update(initiatorRef, { held: held + reservedCoins });
+      if (reservedCoins > 0) {
+        tx.set(holdRef, {
+          uid: initiatorId,
+          amount: reservedCoins,
+          currency: COIN_CURRENCY,
+          status: "held",
+          refType: "communicationRequest",
+          refId: requestRef.id,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt,
+        });
+        tx.update(initiatorRef, { held: held + reservedCoins });
+      }
 
       tx.set(requestRef, {
         type,
@@ -148,9 +154,10 @@ exports.createCommunicationRequest = onCall(
         payerId: initiatorId,
         payeeId: authorId,
         offerId,
+        productId,
         pricingSnapshot,
         reservedCoins,
-        holdId: holdRef.id,
+        holdId: reservedCoins > 0 ? holdRef.id : null,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         expiresAt,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -174,15 +181,14 @@ exports.createCommunicationRequest = onCall(
         });
       }
 
-      // Notification to author
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: authorId,
         channel: "user",
         kind: "request_created",
         requestId: requestRef.id,
-        title: "Новий запит",
-        body: type === "file" ? "Надійшов запит: питання + файл." : "Надійшов запит: питання."
+        title: "Нове замовлення",
+        body: productId ? "Придбано товар у вашому магазині." : "Надійшов запит на комунікацію."
       }));
     });
 
@@ -208,20 +214,39 @@ exports.acceptCommunicationRequest = onCall(
       if (req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_AUTHOR");
       if (req.status !== "pending") throw new HttpsError("failed-precondition", "NOT_PENDING");
 
-      tx.update(reqRef, {
+      const updates = {
         status: "accepted",
         acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
 
-      // Notification to initiator
+      // For digital products, we automatically "answer" it if there's delivery text
+      if (req.type === 'product' && req.productId) {
+        const prodSnap = await tx.get(db.doc(`products/${req.productId}`));
+        if (prodSnap.exists) {
+          const prod = prodSnap.data();
+          tx.set(reqRef.collection("messages").doc(), {
+            senderId: uid,
+            kind: "answer",
+            text: prod.deliveryText || "Дякуємо за покупку!",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          updates.status = "answered";
+          updates.answeredAt = admin.firestore.FieldValue.serverTimestamp();
+          updates.lastMessageAt = admin.firestore.FieldValue.serverTimestamp();
+          updates.lastMessagePreview = "Товар доставлено!";
+        }
+      }
+
+      tx.update(reqRef, updates);
+
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.initiatorId,
         channel: "user",
         kind: "request_accepted",
         requestId,
-        title: "Запит прийнято",
-        body: "Професіонал прийняв ваш запит і готує відповідь."
+        title: "Замовлення прийнято",
+        body: req.type === 'product' ? "Товар готовий до отримання!" : "Ваш запит прийнято."
       }));
     });
 
@@ -235,7 +260,7 @@ exports.postAnswer = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const requestId = assertNonEmptyString(request.data?.requestId, "requestId");
-    const answerText = assertNonEmptyString(request.data?.answerText, "answerText", 1000);
+    const answerText = assertNonEmptyString(request.data?.answerText, "answerText", 2000);
 
     const db = admin.firestore();
     const reqRef = db.doc(`communicationRequests/${requestId}`);
@@ -262,7 +287,6 @@ exports.postAnswer = onCall(
         lastMessagePreview: answerText.slice(0, 120),
       });
 
-      // Notification to initiator
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.initiatorId,
@@ -270,7 +294,7 @@ exports.postAnswer = onCall(
         kind: "request_answered",
         requestId,
         title: "Є відповідь",
-        body: "Професіонал надіслав відповідь. Перегляньте та підтвердіть оплату."
+        body: "Ви отримали відповідь на ваш запит."
       }));
     });
 
@@ -296,54 +320,57 @@ exports.confirmReceiptAndCapture = onCall(
       if (req.initiatorId !== uid) throw new HttpsError("permission-denied", "NOT_INITIATOR");
       if (req.status !== "answered") throw new HttpsError("failed-precondition", "NOT_ANSWERED");
 
-      const holdRef = db.doc(`walletHolds/${req.holdId}`);
-      const holdSnap = await tx.get(holdRef);
-      if (!holdSnap.exists || holdSnap.data().status !== "held") throw new HttpsError("failed-precondition", "HOLD_INVALID");
-
-      const payerRef = db.doc(`users/${req.payerId}`);
-      const payeeRef = db.doc(`users/${req.payeeId}`);
-      const [payerSnap, payeeSnap] = await Promise.all([tx.get(payerRef), tx.get(payeeRef)]);
-
       const amount = Number(req.reservedCoins || 0);
-      const payerHeld = Number(payerSnap.data().held || 0);
-      const payerBalance = Number(payerSnap.data().balance || 0);
+      
+      if (amount > 0) {
+        const holdRef = db.doc(`walletHolds/${req.holdId}`);
+        const holdSnap = await tx.get(holdRef);
+        if (!holdSnap.exists || holdSnap.data().status !== "held") throw new HttpsError("failed-precondition", "HOLD_INVALID");
 
-      if (payerHeld < amount || payerBalance < amount) throw new HttpsError("failed-precondition", "INSUFFICIENT_FUNDS_AT_CAPTURE");
+        const payerRef = db.doc(`users/${req.payerId}`);
+        const payeeRef = db.doc(`users/${req.payeeId}`);
+        const [payerSnap, payeeSnap] = await Promise.all([tx.get(payerRef), tx.get(payeeRef)]);
 
-      applyCoinTransferTx(tx, {
-        db, fromUid: req.payerId, toUid: req.payeeId,
-        amount, callId: requestId, kind: "qa_capture",
-        metadata: { offerId: req.offerId, type: req.type },
-      });
+        const payerHeld = Number(payerSnap.data().held || 0);
+        const payerBalance = Number(payerSnap.data().balance || 0);
 
-      tx.update(payerRef, {
-        held: payerHeld - amount,
-        balance: payerBalance - amount,
-        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        if (payerHeld < amount || payerBalance < amount) throw new HttpsError("failed-precondition", "INSUFFICIENT_FUNDS_AT_CAPTURE");
 
-      tx.update(payeeRef, {
-        balance: Number(payeeSnap.data().balance || 0) + amount,
-        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        applyCoinTransferTx(tx, {
+          db, fromUid: req.payerId, toUid: req.payeeId,
+          amount, callId: requestId, kind: "purchase_capture",
+          metadata: { offerId: req.offerId, productId: req.productId, type: req.type },
+        });
 
-      tx.update(holdRef, { status: "captured", capturedAt: admin.firestore.FieldValue.serverTimestamp() });
+        tx.update(payerRef, {
+          held: payerHeld - amount,
+          balance: payerBalance - amount,
+          balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        tx.update(payeeRef, {
+          balance: Number(payeeSnap.data().balance || 0) + amount,
+          balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        tx.update(holdRef, { status: "captured", capturedAt: admin.firestore.FieldValue.serverTimestamp() });
+      }
+
       tx.update(reqRef, { status: "completed", completedAt: admin.firestore.FieldValue.serverTimestamp(), lastMessageAt: admin.firestore.FieldValue.serverTimestamp() });
       
       tx.set(reqRef.collection("messages").doc(), {
-        senderId: "system", kind: "system", text: `Payment captured: ${amount} COIN`,
+        senderId: "system", kind: "system", text: amount > 0 ? `Payment captured: ${amount} COIN` : "Purchase completed",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Notification to author
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.authorId,
         channel: "user",
         kind: "request_completed",
         requestId,
-        title: "Оплата підтверджена",
-        body: `Замовник підтвердив отримання. Нараховано ${amount} COIN.`
+        title: "Оплата отримана",
+        body: amount > 0 ? `Кошти (${amount} COIN) зараховано на баланс.` : "Замовлення завершено."
       }));
     });
 
@@ -369,17 +396,18 @@ exports.declineCommunicationRequest = onCall(
       if (req.initiatorId !== uid && req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_PARTICIPANT");
       if (req.status !== "pending" && req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_CANCELLABLE");
 
-      const holdRef = db.doc(`walletHolds/${req.holdId}`);
-      const holdSnap = await tx.get(holdRef);
-      if (holdSnap.exists && holdSnap.data().status === "held") {
-        const payerRef = db.doc(`users/${req.payerId}`);
-        const payerSnap = await tx.get(payerRef);
-        if (payerSnap.exists) {
-          const payerHeld = Number(payerSnap.data().held || 0);
-          const amount = Number(req.reservedCoins || 0);
-          tx.update(payerRef, { held: Math.max(0, payerHeld - amount) });
+      if (req.reservedCoins > 0 && req.holdId) {
+        const holdRef = db.doc(`walletHolds/${req.holdId}`);
+        const holdSnap = await tx.get(holdRef);
+        if (holdSnap.exists && holdSnap.data().status === "held") {
+          const payerRef = db.doc(`users/${req.payerId}`);
+          const payerSnap = await tx.get(payerRef);
+          if (payerSnap.exists) {
+            const payerHeld = Number(payerSnap.data().held || 0);
+            tx.update(payerRef, { held: Math.max(0, payerHeld - req.reservedCoins) });
+          }
+          tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
-        tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
       }
 
       tx.update(reqRef, {
@@ -388,7 +416,7 @@ exports.declineCommunicationRequest = onCall(
       });
 
       tx.set(reqRef.collection("messages").doc(), {
-        senderId: "system", kind: "system", text: `Request declined: ${reason}`,
+        senderId: "system", kind: "system", text: `Cancelled: ${reason}`,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -399,8 +427,8 @@ exports.declineCommunicationRequest = onCall(
         channel: "user",
         kind: "request_declined",
         requestId,
-        title: "Запит відхилено",
-        body: "Запит було відхилено іншою стороною. Резерв знято."
+        title: "Скасовано",
+        body: "Замовлення було скасовано."
       }));
     });
 
@@ -441,29 +469,20 @@ exports.expireCommunicationRequests = onSchedule(
     for (const docSnap of snap.docs) {
       const req = docSnap.data();
       await db.runTransaction(async (tx) => {
-        const holdRef = db.doc(`walletHolds/${req.holdId}`);
-        const holdSnap = await tx.get(holdRef);
-        if (holdSnap.exists && holdSnap.data().status === "held") {
-          const payerRef = db.doc(`users/${req.payerId}`);
-          const payerSnap = await tx.get(payerRef);
-          if (payerSnap.exists) {
-            const held = Number(payerSnap.data().held || 0);
-            const amount = Number(req.reservedCoins || 0);
-            tx.update(payerRef, { held: Math.max(0, held - amount) });
+        if (req.reservedCoins > 0 && req.holdId) {
+          const holdRef = db.doc(`walletHolds/${req.holdId}`);
+          const holdSnap = await tx.get(holdRef);
+          if (holdSnap.exists && holdSnap.data().status === "held") {
+            const payerRef = db.doc(`users/${req.payerId}`);
+            const payerSnap = await tx.get(payerRef);
+            if (payerSnap.exists) {
+              const held = Number(payerSnap.data().held || 0);
+              tx.update(payerRef, { held: Math.max(0, held - req.reservedCoins) });
+            }
+            tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
           }
-          tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
         tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
-        
-        const n1 = db.collection("notifications").doc();
-        tx.set(n1, buildNotification({
-          uid: req.payerId,
-          channel: "user",
-          kind: "request_expired",
-          requestId: docSnap.id,
-          title: "Запит прострочено",
-          body: "Минуло 24 години. Резерв знято."
-        }));
       });
     }
   }
@@ -599,16 +618,5 @@ exports.billingTickAcceptedCalls = onSchedule(
         });
       }
     }
-  }
-);
-
-exports.cleanupMissedCalls = onSchedule(
-  { region: "us-central1", schedule: "every 5 minutes" },
-  async () => {
-    const db = admin.firestore();
-    const snap = await db.collection("calls").where("status", "==", "ringing").where("expiresAt", "<=", tsNow()).limit(100).get();
-    const batch = db.batch();
-    snap.docs.forEach(d => batch.update(d.ref, { status: "ended", endReason: "expired" }));
-    await batch.commit();
   }
 );

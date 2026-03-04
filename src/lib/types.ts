@@ -38,9 +38,10 @@ export type CommunicationRequest = {
   authorId: string;
   payerId: string;
   payeeId: string;
-  type: 'video' | 'text' | 'file';
+  type: 'video' | 'text' | 'file' | 'product';
   status: 'pending' | 'accepted' | 'answered' | 'completed' | 'declined' | 'expired' | 'ringing';
-  offerId: string;
+  offerId?: string;
+  productId?: string;
   pricingSnapshot: any;
   reservedCoins: number;
   holdId: string;
@@ -51,6 +52,19 @@ export type CommunicationRequest = {
   lastMessageAt: Timestamp | any;
   lastMessagePreview?: string;
   fileMeta?: any;
+};
+
+export type DigitalProduct = {
+  id: string;
+  authorId: string;
+  categoryId: string;
+  subcategoryId: string;
+  title: string;
+  description: string;
+  imageUrl?: string;
+  deliveryText: string;
+  price: number;
+  createdAt: Timestamp | any;
 };
 
 export type Notification = {

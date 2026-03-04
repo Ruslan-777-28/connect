@@ -28,9 +28,16 @@ service firebase.storage {
         && request.resource.contentType.matches('image/.*');
     }
 
+    // Rules for product images
+    match /products/{userId}/{allPaths=**} {
+      allow read: if true; 
+      allow write: if isSelf(userId)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
     // uploads/{uid}/... used for communication requests (files)
     match /uploads/{uid}/{allPaths=**} {
-      // Participants need to read, so we allow signed in users for MVP
       allow read: if isSignedIn();
       allow write: if isSelf(uid)
         && request.resource.size < 10 * 1024 * 1024

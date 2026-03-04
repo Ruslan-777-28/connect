@@ -30,16 +30,17 @@
     "CommunicationRequest": {
       "title": "CommunicationRequest",
       "type": "object",
-      "description": "Represents a communication request (Video, Q&A or File).",
+      "description": "Represents a communication request (Video, Q&A, File or Product Purchase).",
       "properties": {
         "id": { "type": "string" },
         "initiatorId": { "type": "string" },
         "authorId": { "type": "string" },
         "payerId": { "type": "string" },
         "payeeId": { "type": "string" },
-        "type": { "type": "string", "enum": ["video", "text", "file"] },
+        "type": { "type": "string", "enum": ["video", "text", "file", "product"] },
         "status": { "type": "string", "enum": ["pending", "accepted", "answered", "completed", "declined", "expired", "ringing"] },
         "offerId": { "type": "string" },
+        "productId": { "type": "string" },
         "pricingSnapshot": { "type": "object" },
         "reservedCoins": { "type": "number" },
         "holdId": { "type": "string" },
@@ -49,6 +50,22 @@
         "completedAt": { "type": "string", "format": "date-time" },
         "lastMessageAt": { "type": "string", "format": "date-time" },
         "lastMessagePreview": { "type": "string" }
+      }
+    },
+    "Product": {
+      "title": "Digital Product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "deliveryText": { "type": "string" },
+        "price": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
       }
     },
     "Message": {
@@ -109,6 +126,10 @@
       {
         "path": "/communicationRequests/{requestId}",
         "definition": { "entityName": "CommunicationRequest", "schema": { "$ref": "#/backend/entities/CommunicationRequest" } }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": { "entityName": "Product", "schema": { "$ref": "#/backend/entities/Product" } }
       },
       {
         "path": "/communicationRequests/{requestId}/messages/{messageId}",

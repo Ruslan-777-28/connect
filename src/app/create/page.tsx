@@ -48,14 +48,17 @@ export default function CreatePage() {
           </CardContent>
         </Card>
 
-        <Card className="opacity-60 grayscale cursor-not-allowed">
+        <Card 
+          className="cursor-pointer transition-colors hover:bg-accent/50"
+          onClick={() => router.push('/create/product')}
+        >
           <CardContent className="flex items-start gap-4 p-6">
-            <div className="rounded-full bg-muted p-3">
+            <div className="rounded-full bg-primary/10 p-3 text-primary">
               <Package className="h-6 w-6" />
             </div>
             <div>
               <div className="text-lg font-semibold">Цифровий товар</div>
-              <p className="text-sm text-muted-foreground">(Незабаром)</p>
+              <p className="text-sm text-muted-foreground">Продавайте гайди, фото чи будь-які файли</p>
             </div>
           </CardContent>
         </Card>

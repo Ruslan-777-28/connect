@@ -6,9 +6,9 @@ import { useUser, useFirestore, useDoc, useMemoFirebase, useCollection } from '@
 import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { UserProfile, CommunicationOffer, Post } from '@/lib/types';
+import type { UserProfile, CommunicationOffer, Post, DigitalProduct } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Video, FileText, HelpCircle, Edit2, Layout } from 'lucide-react';
+import { Video, FileText, HelpCircle, Edit2, Layout, Package } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -18,6 +18,7 @@ import {
   CarouselItem,
 } from "@/components/ui/carousel";
 import { PostCard } from '@/components/post-card';
+import { ProductCard } from '@/components/product-card';
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
@@ -39,7 +40,6 @@ export default function ProfilePage() {
     ) : null),
     [user, firestore]
   );
-  
   const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
 
   const postsQuery = useMemoFirebase(
@@ -50,8 +50,17 @@ export default function ProfilePage() {
     ) : null),
     [user, firestore]
   );
-
   const { data: myPosts, isLoading: loadingPosts } = useCollection<Post>(postsQuery);
+
+  const productsQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'products'),
+      where('authorId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    ) : null),
+    [user, firestore]
+  );
+  const { data: myProducts, isLoading: loadingProducts } = useCollection<DigitalProduct>(productsQuery);
 
   const loading = isUserLoading || isProfileLoading;
 
@@ -77,12 +86,12 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8 pb-24">
+    <div className="container mx-auto max-w-4xl px-4 py-8 pb-32">
       <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
         Мій профіль
       </h1>
       
-      <div className="grid gap-8">
+      <div className="grid gap-12">
         <Card>
           <CardHeader>
             <CardTitle>Редагувати профіль</CardTitle>
@@ -92,18 +101,52 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
+        {/* Секція Магазину */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Package className="h-6 w-6 text-primary" /> Мій магазин
+            </h2>
+            <Button variant="outline" size="sm" onClick={() => router.push('/create/product')}>
+              Додати товар
+            </Button>
+          </div>
+
+          {loadingProducts ? (
+            <div className="flex gap-4">
+              <Skeleton className="h-48 w-40 rounded-xl" />
+              <Skeleton className="h-48 w-40 rounded-xl" />
+            </div>
+          ) : myProducts && myProducts.length > 0 ? (
+            <Carousel opts={{ align: "start" }} className="w-full">
+              <CarouselContent className="-ml-2 md:-ml-4">
+                {myProducts.map((p) => (
+                  <CarouselItem key={p.id} className="pl-2 md:pl-4 basis-[45%] sm:basis-[30%] lg:basis-[22%]">
+                    <ProductCard product={p} />
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </Carousel>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-muted-foreground">
+                Ваш магазин порожній. Додайте свій перший цифровий товар!
+              </CardContent>
+            </Card>
+          )}
+        </section>
+
         {/* Секція Пропозицій */}
         <section className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold tracking-tight">Мої пропозиції</h2>
+            <h2 className="text-2xl font-bold tracking-tight">Послуги комунікації</h2>
             <Button variant="outline" size="sm" onClick={() => router.push('/create')}>
-              Додати
+              Налаштувати
             </Button>
           </div>
           
           {loadingOffers ? (
             <div className="grid gap-4 sm:grid-cols-2">
-              <Skeleton className="h-32 w-full rounded-xl" />
               <Skeleton className="h-32 w-full rounded-xl" />
             </div>
           ) : offers && offers.length > 0 ? (
@@ -129,12 +172,7 @@ export default function ProfilePage() {
                         {offer.pricing.ratePerFile && `${offer.pricing.ratePerFile} COIN/файл`}
                         {offer.pricing.ratePerQuestion && `${offer.pricing.ratePerQuestion} COIN/пит`}
                       </div>
-                      <Button 
-                        size="sm" 
-                        variant="ghost" 
-                        className="h-8 w-8 p-0"
-                        onClick={() => router.push(`/create/communication?type=${offer.type}&id=${offer.id}`)}
-                      >
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => router.push(`/create/communication?type=${offer.type}&id=${offer.id}`)}>
                         <Edit2 className="h-4 w-4" />
                       </Button>
                     </div>
@@ -145,14 +183,14 @@ export default function ProfilePage() {
           ) : (
             <Card className="border-dashed">
               <CardContent className="p-8 text-center text-muted-foreground">
-                Ви ще не створили жодної пропозиції.
+                Ви ще не налаштували жодної послуги.
               </CardContent>
             </Card>
           )}
         </section>
 
         {/* Секція Постів */}
-        <section className="space-y-6">
+        <section className="space-y-6 pb-12">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold tracking-tight">Мої пости</h2>
             <Button variant="outline" size="sm" onClick={() => router.push('/create/post')}>
@@ -163,16 +201,9 @@ export default function ProfilePage() {
           {loadingPosts ? (
             <div className="flex gap-4">
               <Skeleton className="h-48 w-64 rounded-xl" />
-              <Skeleton className="h-48 w-64 rounded-xl" />
             </div>
           ) : myPosts && myPosts.length > 0 ? (
-            <Carousel
-              opts={{
-                align: "start",
-                loop: false,
-              }}
-              className="w-full"
-            >
+            <Carousel opts={{ align: "start" }} className="w-full">
               <CarouselContent className="-ml-2 md:-ml-4">
                 {myPosts.map((post) => (
                   <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
