@@ -12,6 +12,9 @@ import type { Post, UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PostCard } from '@/components/post-card';
+import { LikeButton } from '@/components/LikeButton';
+import { CommentButton } from '@/components/CommentButton';
+import { FavoriteButton } from '@/components/FavoriteButton';
 
 export default function ExpandedPostPage() {
   const params = useParams();
@@ -66,14 +69,17 @@ export default function ExpandedPostPage() {
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 pb-24">
-      <Button 
-        variant="ghost" 
-        className="mb-6 -ml-2 text-muted-foreground"
-        onClick={() => router.back()}
-      >
-        <ArrowLeft className="mr-2 h-4 w-4" />
-        Назад
-      </Button>
+      <div className="flex items-center justify-between mb-6">
+        <Button 
+          variant="ghost" 
+          className="-ml-2 text-muted-foreground"
+          onClick={() => router.back()}
+        >
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Назад
+        </Button>
+        <FavoriteButton targetId={postId} type="post" />
+      </div>
 
       <div className="grid gap-12">
         {/* Повний пост */}
@@ -107,7 +113,7 @@ export default function ExpandedPostPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-4 py-4 border-y">
+          <div className="flex items-center justify-between py-4 border-y">
             {userLoading ? (
               <Skeleton className="h-12 w-12 rounded-full" />
             ) : userProfile ? (
@@ -126,6 +132,11 @@ export default function ExpandedPostPage() {
                 <p className="font-bold">Користувач</p>
               </div>
             )}
+
+            <div className="flex items-center gap-4">
+              <CommentButton postId={postId} />
+              <LikeButton targetId={postId} type="post" />
+            </div>
           </div>
 
           <div className="prose prose-neutral dark:prose-invert max-w-none">

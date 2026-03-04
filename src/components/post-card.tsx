@@ -12,6 +12,7 @@ import { UserAvatar } from './user-avatar';
 import { Skeleton } from './ui/skeleton';
 import { FavoriteButton } from './FavoriteButton';
 import { LikeButton } from './LikeButton';
+import { CommentButton } from './CommentButton';
 
 interface PostCardProps {
   post: Post;
@@ -89,7 +90,10 @@ export function PostCard({ post, userId, showAuthor }: PostCardProps) {
                   {post.viewCount || 0}
                 </span>
               </div>
-              <LikeButton targetId={post.id} type="post" />
+              <div className="flex items-center gap-1">
+                <CommentButton postId={post.id} />
+                <LikeButton targetId={post.id} type="post" />
+              </div>
             </div>
           </CardContent>
         </Card>

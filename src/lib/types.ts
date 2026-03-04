@@ -145,6 +145,13 @@ export type Post = {
   updatedAt?: Timestamp | any;
 };
 
+export type Comment = {
+  id: string;
+  uid: string;
+  text: string;
+  createdAt: Timestamp | any;
+};
+
 export type FavoriteType = 'user' | 'post' | 'product';
 
 export type Favorite = {

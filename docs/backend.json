@@ -113,6 +113,18 @@
       },
       "required": ["id", "authorId", "title", "content", "createdAt"]
     },
+    "Comment": {
+      "title": "Comment",
+      "type": "object",
+      "description": "A comment on a post.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "text", "createdAt"]
+    },
     "Favorite": {
       "title": "Favorite",
       "type": "object",
@@ -168,6 +180,10 @@
       {
         "path": "/posts/{postId}",
         "definition": { "entityName": "Post", "schema": { "$ref": "#/backend/entities/Post" } }
+      },
+      {
+        "path": "/posts/{postId}/comments/{commentId}",
+        "definition": { "entityName": "Comment", "schema": { "$ref": "#/backend/entities/Comment" } }
       },
       {
         "path": "/favorites/{favoriteId}",
