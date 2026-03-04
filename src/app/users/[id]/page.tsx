@@ -307,6 +307,10 @@ export default function UserProfilePage() {
       {isCalendarOpen && (
         <Dialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
           <DialogContent className="sm:max-w-xl p-0 overflow-hidden">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Календар подій</DialogTitle>
+              <DialogDescription>Перегляд доступних сеансів для бронювання</DialogDescription>
+            </DialogHeader>
             <CalendarView 
               userId={id} 
               onClose={() => setIsCalendarOpen(false)} 
