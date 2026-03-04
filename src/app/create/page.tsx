@@ -13,7 +13,7 @@ export default function CreatePage() {
 
   return (
     <div className="container mx-auto max-w-3xl p-4 py-8">
-      <h1 className="mb-8 text-2xl font-bold">Create</h1>
+      <h1 className="mb-8 text-2xl font-bold">Створити</h1>
 
       <div className="grid gap-4">
         <Card 
@@ -33,14 +33,17 @@ export default function CreatePage() {
           </CardContent>
         </Card>
 
-        <Card className="opacity-60 grayscale cursor-not-allowed">
+        <Card 
+          className="cursor-pointer transition-colors hover:bg-accent/50"
+          onClick={() => router.push('/create/post')}
+        >
           <CardContent className="flex items-start gap-4 p-6">
-            <div className="rounded-full bg-muted p-3">
-              <Package className="h-6 w-6" />
+            <div className="rounded-full bg-primary/10 p-3 text-primary">
+              <Layout className="h-6 w-6" />
             </div>
             <div>
-              <div className="text-lg font-semibold">Цифровий товар</div>
-              <p className="text-sm text-muted-foreground">(Незабаром)</p>
+              <div className="text-lg font-semibold">Пост</div>
+              <p className="text-sm text-muted-foreground">Опублікуйте статтю чи новину у свій профіль</p>
             </div>
           </CardContent>
         </Card>
@@ -48,10 +51,10 @@ export default function CreatePage() {
         <Card className="opacity-60 grayscale cursor-not-allowed">
           <CardContent className="flex items-start gap-4 p-6">
             <div className="rounded-full bg-muted p-3">
-              <Layout className="h-6 w-6" />
+              <Package className="h-6 w-6" />
             </div>
             <div>
-              <div className="text-lg font-semibold">Пост</div>
+              <div className="text-lg font-semibold">Цифровий товар</div>
               <p className="text-sm text-muted-foreground">(Незабаром)</p>
             </div>
           </CardContent>

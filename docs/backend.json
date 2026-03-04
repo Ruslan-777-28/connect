@@ -85,6 +85,8 @@
       "properties": {
         "id": { "type": "string" },
         "authorId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
         "title": { "type": "string" },
         "content": { "type": "string" },
         "imageUrl": { "type": "string", "format": "uri" },

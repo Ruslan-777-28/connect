@@ -8,7 +8,7 @@ import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { UserProfile, CommunicationOffer, Post } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Video, FileText, HelpCircle, Edit2 } from 'lucide-react';
+import { Video, FileText, HelpCircle, Edit2, Layout } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -18,28 +18,6 @@ import {
   CarouselItem,
 } from "@/components/ui/carousel";
 import { PostCard } from '@/components/post-card';
-
-// Demo posts for my profile
-const DEMO_MY_POSTS: Post[] = [
-  {
-    id: '1',
-    authorId: 'me',
-    title: 'Основи успішної комунікації',
-    content: 'У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим.',
-    imageUrl: 'https://picsum.photos/seed/post1/600/400',
-    viewCount: 154,
-    createdAt: new Date('2024-09-12'),
-  },
-  {
-    id: '2',
-    authorId: 'me',
-    title: 'Нові тренди в дизайні 2024',
-    content: 'Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року. Від мінімалізму до нео-футуризму.',
-    imageUrl: 'https://picsum.photos/seed/post2/600/400',
-    viewCount: 89,
-    createdAt: new Date('2024-09-05'),
-  }
-];
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
@@ -63,6 +41,17 @@ export default function ProfilePage() {
   );
   
   const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
+
+  const postsQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'posts'),
+      where('authorId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    ) : null),
+    [user, firestore]
+  );
+
+  const { data: myPosts, isLoading: loadingPosts } = useCollection<Post>(postsQuery);
 
   const loading = isUserLoading || isProfileLoading;
 
@@ -162,30 +151,44 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* Секція Постів (Горизонтальна карусель) */}
+        {/* Секція Постів */}
         <section className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold tracking-tight">Мої пости</h2>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => router.push('/create/post')}>
               Створити пост
             </Button>
           </div>
 
-          <Carousel
-            opts={{
-              align: "start",
-              loop: false,
-            }}
-            className="w-full"
-          >
-            <CarouselContent className="-ml-2 md:-ml-4">
-              {DEMO_MY_POSTS.map((post) => (
-                <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
-                  <PostCard post={post} userId={user?.uid || 'me'} />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </Carousel>
+          {loadingPosts ? (
+            <div className="flex gap-4">
+              <Skeleton className="h-48 w-64 rounded-xl" />
+              <Skeleton className="h-48 w-64 rounded-xl" />
+            </div>
+          ) : myPosts && myPosts.length > 0 ? (
+            <Carousel
+              opts={{
+                align: "start",
+                loop: false,
+              }}
+              className="w-full"
+            >
+              <CarouselContent className="-ml-2 md:-ml-4">
+                {myPosts.map((post) => (
+                  <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
+                    <PostCard post={post} userId={user?.uid || ''} />
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </Carousel>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                <Layout className="h-8 w-8 opacity-20" />
+                <p>Ви ще не опублікували жодного посту.</p>
+              </CardContent>
+            </Card>
+          )}
         </section>
       </div>
     </div>
