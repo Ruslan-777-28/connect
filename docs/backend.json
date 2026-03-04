@@ -77,6 +77,22 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "readAt": { "type": "string", "format": "date-time", "nullable": true }
       }
+    },
+    "Post": {
+      "title": "Post",
+      "type": "object",
+      "description": "A blog post or update published by a user.",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "viewCount": { "type": "number", "default": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "title", "content", "createdAt"]
     }
   },
   "auth": {
@@ -99,6 +115,10 @@
       {
         "path": "/notifications/{notificationId}",
         "definition": { "entityName": "Notification", "schema": { "$ref": "#/backend/entities/Notification" } }
+      },
+      {
+        "path": "/posts/{postId}",
+        "definition": { "entityName": "Post", "schema": { "$ref": "#/backend/entities/Post" } }
       }
     ]
   }

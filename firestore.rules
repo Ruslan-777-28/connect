@@ -67,6 +67,14 @@ service cloud.firestore {
       }
     }
 
+    // ---------- Posts ----------
+    match /posts/{postId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.authorId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
     match /calls/{callId} {
       function isCallParticipant() {
         return isSignedIn() && (

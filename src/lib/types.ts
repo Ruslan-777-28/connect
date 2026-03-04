@@ -119,3 +119,14 @@ export type Call = CommunicationRequest & {
   endedAtTs?: Timestamp | null;
   caller?: UserProfile;
 };
+
+export type Post = {
+  id: string;
+  authorId: string;
+  title: string;
+  content: string;
+  imageUrl?: string;
+  viewCount: number;
+  createdAt: Timestamp | any;
+  updatedAt?: Timestamp | any;
+};

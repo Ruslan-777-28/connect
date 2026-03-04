@@ -5,12 +5,12 @@ import { useMemo, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { doc, collection, query, where } from 'firebase/firestore';
 import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp, useCollection } from '@/firebase';
-import type { UserProfile, CommunicationOffer } from '@/lib/types';
+import type { UserProfile, CommunicationOffer, Post } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, MoreHorizontal } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -31,6 +31,38 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from '@/components/ui/textarea';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { PostCard } from '@/components/post-card';
+
+// Demo posts
+const DEMO_POSTS: Post[] = [
+  {
+    id: '1',
+    authorId: 'demo',
+    title: 'Основи успішної комунікації',
+    content: 'У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим.',
+    imageUrl: 'https://picsum.photos/seed/post1/600/400',
+    viewCount: 154,
+    createdAt: new Date('2024-09-12'),
+  },
+  {
+    id: '2',
+    authorId: 'demo',
+    title: 'Нові тренди в дизайні 2024',
+    content: 'Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року. Від мінімалізму до нео-футуризму.',
+    imageUrl: 'https://picsum.photos/seed/post2/600/400',
+    viewCount: 89,
+    createdAt: new Date('2024-09-05'),
+  },
+  {
+    id: '3',
+    authorId: 'demo',
+    title: 'Як працювати з клієнтами',
+    content: 'Практичні поради щодо управління очікуваннями клієнтів та побудови довгострокових відносин у фрілансі.',
+    imageUrl: 'https://picsum.photos/seed/post3/600/400',
+    viewCount: 210,
+    createdAt: new Date('2024-08-28'),
+  }
+];
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -240,54 +272,25 @@ export default function UserProfilePage() {
           )}
         </section>
 
-        {/* Секція Публікацій */}
+        {/* Секція Публікацій (Горизонтальна карусель) */}
         <section className="space-y-6">
           <h2 className="text-2xl font-bold tracking-tight">Публікації</h2>
           
-          <div className="grid gap-6">
-            <Card className="overflow-hidden border-primary/5 hover:border-primary/15 transition-all">
-              <CardContent className="p-0">
-                <div className="aspect-video w-full bg-muted flex items-center justify-center">
-                  <Layout className="h-10 w-10 text-muted-foreground/30" />
-                </div>
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xl font-bold">Основи успішної комунікації</h3>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-muted-foreground leading-relaxed line-clamp-3">
-                    У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим і як правильно ставити запитання, щоб отримати максимум інформації...
-                  </p>
-                  <div className="mt-6 flex items-center gap-4 text-[11px] text-muted-foreground uppercase font-bold tracking-widest">
-                    <span className="bg-muted px-2 py-1 rounded">12 ВЕРЕСНЯ</span>
-                    <span>•</span>
-                    <span>154 ПЕРЕГЛЯДИ</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden border-primary/5 opacity-80">
-              <CardContent className="p-0">
-                <div className="aspect-video w-full bg-muted flex items-center justify-center">
-                  <Layout className="h-10 w-10 text-muted-foreground/30" />
-                </div>
-                <div className="p-6">
-                  <h3 className="text-xl font-bold mb-3">Нові тренди в дизайні 2024</h3>
-                  <p className="text-muted-foreground leading-relaxed line-clamp-2">
-                    Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року...
-                  </p>
-                  <div className="mt-6 flex items-center gap-4 text-[11px] text-muted-foreground uppercase font-bold tracking-widest">
-                    <span className="bg-muted px-2 py-1 rounded">05 ВЕРЕСНЯ</span>
-                    <span>•</span>
-                    <span>89 ПЕРЕГЛЯДІВ</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <Carousel
+            opts={{
+              align: "start",
+              loop: false,
+            }}
+            className="w-full"
+          >
+            <CarouselContent className="-ml-2 md:-ml-4">
+              {DEMO_POSTS.map((post) => (
+                <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
+                  <PostCard post={post} userId={id} />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
         </section>
       </div>
 

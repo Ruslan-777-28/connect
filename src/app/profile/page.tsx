@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo } from 'react';
@@ -5,12 +6,40 @@ import { useUser, useFirestore, useDoc, useMemoFirebase, useCollection } from '@
 import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { UserProfile, CommunicationOffer } from '@/lib/types';
+import type { UserProfile, CommunicationOffer, Post } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Video, FileText, HelpCircle, Edit2, Layout, MoreHorizontal } from 'lucide-react';
+import { Video, FileText, HelpCircle, Edit2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+} from "@/components/ui/carousel";
+import { PostCard } from '@/components/post-card';
+
+// Demo posts for my profile
+const DEMO_MY_POSTS: Post[] = [
+  {
+    id: '1',
+    authorId: 'me',
+    title: 'Основи успішної комунікації',
+    content: 'У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим.',
+    imageUrl: 'https://picsum.photos/seed/post1/600/400',
+    viewCount: 154,
+    createdAt: new Date('2024-09-12'),
+  },
+  {
+    id: '2',
+    authorId: 'me',
+    title: 'Нові тренди в дизайні 2024',
+    content: 'Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року. Від мінімалізму до нео-футуризму.',
+    imageUrl: 'https://picsum.photos/seed/post2/600/400',
+    viewCount: 89,
+    createdAt: new Date('2024-09-05'),
+  }
+];
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
@@ -24,7 +53,6 @@ export default function ProfilePage() {
   
   const { data: userProfile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
 
-  // Отримуємо пропозиції поточного користувача через useCollection
   const offersQuery = useMemoFirebase(
     () => (user ? query(
       collection(firestore, 'communicationOffers'), 
@@ -134,7 +162,7 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* Нова секція Постів */}
+        {/* Секція Постів (Горизонтальна карусель) */}
         <section className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold tracking-tight">Мої пости</h2>
@@ -143,42 +171,21 @@ export default function ProfilePage() {
             </Button>
           </div>
 
-          <div className="grid gap-4">
-            {/* Тимчасові картки-заглушки для візуалізації */}
-            <Card className="overflow-hidden border-primary/5">
-              <CardContent className="p-0">
-                <div className="aspect-video w-full bg-muted flex items-center justify-center">
-                  <Layout className="h-10 w-10 text-muted-foreground/50" />
-                </div>
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-bold">Назва майбутнього посту</h3>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    Тут буде відображатися текст вашої публікації. Користувачі зможуть читати ваші думки, оновлення або корисні поради...
-                  </p>
-                  <div className="mt-4 flex items-center gap-4 text-[10px] text-muted-foreground uppercase font-bold tracking-wider">
-                    <span>12 ВЕРЕСНЯ</span>
-                    <span>•</span>
-                    <span>154 ПЕРЕГЛЯДИ</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-dashed">
-              <CardContent className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
-                <div className="rounded-full bg-muted p-3 mb-2">
-                  <Layout className="h-6 w-6 opacity-40" />
-                </div>
-                <p className="font-medium text-sm">У вас поки немає опублікованих постів</p>
-                <p className="text-xs">Діліться своїми знаннями та залучайте більше клієнтів.</p>
-              </CardContent>
-            </Card>
-          </div>
+          <Carousel
+            opts={{
+              align: "start",
+              loop: false,
+            }}
+            className="w-full"
+          >
+            <CarouselContent className="-ml-2 md:-ml-4">
+              {DEMO_MY_POSTS.map((post) => (
+                <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
+                  <PostCard post={post} userId={user?.uid || 'me'} />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
         </section>
       </div>
     </div>
