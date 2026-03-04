@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -5,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bell, Info, UserPlus, ArrowRight, Loader2 } from 'lucide-react';
+import { Bell, Info, UserPlus, ArrowRight, Loader2, MessageSquare } from 'lucide-react';
 import { useUser, useFirestore, useCollection, useMemoFirebase, useFirebaseApp } from '@/firebase';
 import { collection, query, where, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -20,7 +21,7 @@ export default function NotificationsPage() {
   const router = useRouter();
 
   const systemQuery = useMemoFirebase(
-    () => (user ? query(
+    () => (user?.uid ? query(
       collection(firestore, 'notifications'),
       where('uid', '==', user.uid),
       where('channel', '==', 'system'),
@@ -30,7 +31,7 @@ export default function NotificationsPage() {
   );
 
   const userQuery = useMemoFirebase(
-    () => (user ? query(
+    () => (user?.uid ? query(
       collection(firestore, 'notifications'),
       where('uid', '==', user.uid),
       where('channel', '==', 'user'),
@@ -55,6 +56,9 @@ export default function NotificationsPage() {
     // Navigate
     if (notif.kind === 'request_completed') {
       router.push('/chats');
+    } else if (notif.kind === 'new_comment' && notif.requestId) {
+      // In new_comment notifications, requestId stores the postId
+      router.push(`/users/${user?.uid}/posts/${notif.requestId}`);
     } else {
       router.push('/wallet');
     }
@@ -73,9 +77,11 @@ export default function NotificationsPage() {
       <CardContent className="p-4 flex items-start gap-4">
         <div className={cn(
           "p-2 rounded-full",
+          notif.kind === 'new_comment' ? "bg-orange-100 text-orange-600" :
           notif.channel === 'user' ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
         )}>
-          {notif.channel === 'user' ? <UserPlus className="h-5 w-5" /> : <Info className="h-5 w-5" />}
+          {notif.kind === 'new_comment' ? <MessageSquare className="h-5 w-5" /> :
+           notif.channel === 'user' ? <UserPlus className="h-5 w-5" /> : <Info className="h-5 w-5" />}
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between mb-1">
@@ -113,7 +119,7 @@ export default function NotificationsPage() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="system">Системні</TabsTrigger>
-          <TabsTrigger value="users">Користувачів</TabsTrigger>
+          <TabsTrigger value="user">Користувачів</TabsTrigger>
         </TabsList>
 
         {isLoading ? (
@@ -132,7 +138,7 @@ export default function NotificationsPage() {
               )}
             </TabsContent>
 
-            <TabsContent value="users" className="mt-0">
+            <TabsContent value="user" className="mt-0">
               {userNotifs && userNotifs.length > 0 ? (
                 userNotifs.map(renderNotification)
               ) : (

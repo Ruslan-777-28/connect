@@ -1,6 +1,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -79,6 +80,50 @@ function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, met
   tx.set(debitRef, { ...entryBase, uid: fromUid, type: "call_payment", amount: -Math.abs(amount) });
   tx.set(creditRef, { ...entryBase, uid: toUid, type: "payout", amount: Math.abs(amount) });
 }
+
+// --- FIRESTORE TRIGGERS ---
+
+exports.onCommentCreated = onDocumentCreated(
+  { document: "posts/{postId}/comments/{commentId}", region: "us-central1" },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const comment = snapshot.data();
+    const { postId } = event.params;
+
+    const db = admin.firestore();
+    
+    try {
+      const postSnap = await db.doc(`posts/${postId}`).get();
+      if (!postSnap.exists) return;
+
+      const post = postSnap.data();
+      const authorId = post.authorId;
+
+      // Don't notify if the author is commenting on their own post
+      if (comment.uid === authorId) return;
+
+      // Get commenter name
+      const commenterSnap = await db.doc(`users/${comment.uid}`).get();
+      const commenterName = commenterSnap.exists ? commenterSnap.data().name : "Користувач";
+
+      // Create notification for the post author
+      const nRef = db.collection("notifications").doc();
+      await nRef.set(buildNotification({
+        uid: authorId,
+        channel: "user",
+        kind: "new_comment",
+        requestId: postId, // Using requestId field to store postId for easy navigation
+        title: "Новий коментар",
+        body: `${commenterName} прокоментував вашу публікацію "${post.title}".`
+      }));
+      
+      logger.info(`Notification sent to ${authorId} for comment on post ${postId}`);
+    } catch (error) {
+      logger.error("Error in onCommentCreated trigger:", error);
+    }
+  }
+);
 
 // --- COMM REQUEST: CREATE & HOLD ---
 exports.createCommunicationRequest = onCall(
