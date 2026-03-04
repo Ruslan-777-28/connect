@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { BookmarkPlus, BookmarkCheck, Loader2 } from 'lucide-react';
 import { useUser, useFirestore, useCollection, useMemoFirebase, addDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
-import { collection, query, where, doc, limit } from 'firebase/firestore';
+import { collection, query, where, doc } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { Favorite, FavoriteType } from '@/lib/types';
@@ -21,32 +21,33 @@ export function FavoriteButton({ targetId, type, className }: FavoriteButtonProp
   const firestore = useFirestore();
   const [isBusy, setIsBusy] = useState(false);
 
-  // Check if already favorited
-  const favoriteQuery = useMemoFirebase(
-    () => (user && targetId ? query(
+  // Fetch all favorites for this target to get the count
+  const allFavoritesQuery = useMemoFirebase(
+    () => (targetId ? query(
       collection(firestore, 'favorites'),
-      where('uid', '==', user.uid),
       where('targetId', '==', targetId),
-      where('type', '==', type),
-      limit(1)
+      where('type', '==', type)
     ) : null),
-    [user, targetId, type, firestore]
+    [targetId, type, firestore]
   );
 
-  const { data: favorites, isLoading } = useCollection<Favorite>(favoriteQuery);
-  const isFavorited = favorites && favorites.length > 0;
+  const { data: allFavs, isLoading } = useCollection<Favorite>(allFavoritesQuery);
+  
+  const userFavorite = allFavs?.find(f => f.uid === user?.uid);
+  const isFavorited = !!userFavorite;
+  const count = allFavs?.length || 0;
 
   const toggleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!user || !firestore || isBusy) return;
+    if (!user || !firestore || isBusy || !allFavs) return;
 
     setIsBusy(true);
     try {
-      if (isFavorited) {
+      if (isFavorited && userFavorite) {
         // Remove favorite
-        deleteDocumentNonBlocking(doc(firestore, 'favorites', favorites[0].id));
+        deleteDocumentNonBlocking(doc(firestore, 'favorites', userFavorite.id));
       } else {
         // Add favorite
         addDocumentNonBlocking(collection(firestore, 'favorites'), {
@@ -68,9 +69,8 @@ export function FavoriteButton({ targetId, type, className }: FavoriteButtonProp
   return (
     <Button
       variant="ghost"
-      size="icon"
       className={cn(
-        "rounded-full h-8 w-8",
+        "rounded-full h-8 px-2 flex items-center gap-1.5 transition-all duration-200",
         isFavorited ? "text-primary" : "text-muted-foreground",
         className
       )}
@@ -84,6 +84,9 @@ export function FavoriteButton({ targetId, type, className }: FavoriteButtonProp
       ) : (
         <BookmarkPlus className="h-4 w-4" />
       )}
+      <span className="text-[11px] font-extrabold tabular-nums">
+        {count}
+      </span>
     </Button>
   );
 }

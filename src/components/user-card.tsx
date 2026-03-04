@@ -19,8 +19,12 @@ export function UserCard({ user }: UserCardProps) {
 
   return (
     <div className="group relative">
-      <div className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-        <FavoriteButton targetId={user.id} type="user" />
+      <div className="absolute top-2 right-2 z-10">
+        <FavoriteButton 
+          targetId={user.id} 
+          type="user" 
+          className="bg-background/60 backdrop-blur-md hover:bg-background/80 shadow-sm"
+        />
       </div>
       <Link href={`/users/${user.id}`}>
         <Card className="h-full overflow-hidden transition-all duration-300 ease-in-out group-hover:shadow-lg group-hover:-translate-y-1">

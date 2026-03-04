@@ -27,8 +27,12 @@ export function ProductCard({ product, showAuthor }: ProductCardProps) {
 
   return (
     <div className="group relative h-full">
-      <div className="absolute top-2 left-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-        <FavoriteButton targetId={product.id} type="product" className="bg-background/20 backdrop-blur-sm hover:bg-background/40" />
+      <div className="absolute top-2 left-2 z-20">
+        <FavoriteButton 
+          targetId={product.id} 
+          type="product" 
+          className="bg-background/60 backdrop-blur-md hover:bg-background/80 shadow-sm" 
+        />
       </div>
       <Link href={`/users/${product.authorId}/products/${product.id}`}>
         <Card className="h-full overflow-hidden border-primary/5 hover:border-primary/20 transition-all group shadow-sm hover:shadow-md">

@@ -84,7 +84,8 @@ service cloud.firestore {
 
     // ---------- Favorites ----------
     match /favorites/{favoriteId} {
-      allow read, delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow read: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       allow update: if false;
     }
