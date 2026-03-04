@@ -144,3 +144,13 @@ export type Post = {
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
 };
+
+export type FavoriteType = 'user' | 'post' | 'product';
+
+export type Favorite = {
+  id: string;
+  uid: string;
+  targetId: string;
+  type: FavoriteType;
+  createdAt: Timestamp | any;
+};

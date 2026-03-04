@@ -10,6 +10,7 @@ import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { doc } from 'firebase/firestore';
 import { UserAvatar } from './user-avatar';
 import { Skeleton } from './ui/skeleton';
+import { FavoriteButton } from './FavoriteButton';
 
 interface PostCardProps {
   post: Post;
@@ -32,54 +33,59 @@ export function PostCard({ post, userId, showAuthor }: PostCardProps) {
   }).toUpperCase();
 
   return (
-    <Link href={`/users/${userId}/posts/${post.id}`}>
-      <Card className="h-full overflow-hidden border-primary/5 hover:border-primary/20 transition-all group shadow-sm hover:shadow-md">
-        <div className="relative aspect-video w-full bg-muted">
-          {post.imageUrl ? (
-            <Image
-              src={post.imageUrl}
-              alt={post.title}
-              fill
-              className="object-cover transition-transform group-hover:scale-105"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-muted-foreground/30 bg-primary/5">
-              No Image
-            </div>
-          )}
-        </div>
-        <CardContent className="p-4">
-          {showAuthor && (
-            <div className="flex items-center gap-2 mb-3">
-              {loadingAuthor ? (
-                <Skeleton className="h-6 w-6 rounded-full" />
-              ) : author ? (
-                <>
-                  <UserAvatar user={author} className="h-6 w-6" />
-                  <span className="text-[11px] font-semibold truncate">{author.name}</span>
-                </>
-              ) : null}
-            </div>
-          )}
-          
-          <h3 className="font-bold text-sm line-clamp-1 mb-1 group-hover:text-primary transition-colors">
-            {post.title}
-          </h3>
-          <p className="text-xs text-muted-foreground line-clamp-2 mb-3 h-[2.5rem]">
-            {post.content}
-          </p>
-          <div className="flex items-center justify-between text-[9px] text-muted-foreground uppercase font-bold tracking-wider pt-2 border-t border-primary/5">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {formattedDate}
-            </span>
-            <span className="flex items-center gap-1">
-              <Eye className="h-3 w-3" />
-              {post.viewCount || 0}
-            </span>
+    <div className="group relative h-full">
+      <div className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+        <FavoriteButton targetId={post.id} type="post" className="bg-background/20 backdrop-blur-sm hover:bg-background/40" />
+      </div>
+      <Link href={`/users/${userId}/posts/${post.id}`}>
+        <Card className="h-full overflow-hidden border-primary/5 hover:border-primary/20 transition-all group shadow-sm hover:shadow-md">
+          <div className="relative aspect-video w-full bg-muted">
+            {post.imageUrl ? (
+              <Image
+                src={post.imageUrl}
+                alt={post.title}
+                fill
+                className="object-cover transition-transform group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-muted-foreground/30 bg-primary/5">
+                No Image
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
-    </Link>
+          <CardContent className="p-4">
+            {showAuthor && (
+              <div className="flex items-center gap-2 mb-3">
+                {loadingAuthor ? (
+                  <Skeleton className="h-6 w-6 rounded-full" />
+                ) : author ? (
+                  <>
+                    <UserAvatar user={author} className="h-6 w-6" />
+                    <span className="text-[11px] font-semibold truncate">{author.name}</span>
+                  </>
+                ) : null}
+              </div>
+            )}
+            
+            <h3 className="font-bold text-sm line-clamp-1 mb-1 group-hover:text-primary transition-colors">
+              {post.title}
+            </h3>
+            <p className="text-xs text-muted-foreground line-clamp-2 mb-3 h-[2.5rem]">
+              {post.content}
+            </p>
+            <div className="flex items-center justify-between text-[9px] text-muted-foreground uppercase font-bold tracking-wider pt-2 border-t border-primary/5">
+              <span className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                {formattedDate}
+              </span>
+              <span className="flex items-center gap-1">
+                <Eye className="h-3 w-3" />
+                {post.viewCount || 0}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    </div>
   );
 }

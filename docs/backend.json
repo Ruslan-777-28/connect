@@ -112,6 +112,19 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "authorId", "title", "content", "createdAt"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "type": "object",
+      "description": "Represents a user's bookmark/favorite item.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["user", "post", "product"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "targetId", "type", "createdAt"]
     }
   },
   "auth": {
@@ -142,6 +155,10 @@
       {
         "path": "/posts/{postId}",
         "definition": { "entityName": "Post", "schema": { "$ref": "#/backend/entities/Post" } }
+      },
+      {
+        "path": "/favorites/{favoriteId}",
+        "definition": { "entityName": "Favorite", "schema": { "$ref": "#/backend/entities/Favorite" } }
       }
     ]
   }
