@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -33,6 +33,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { PostCard } from '@/components/post-card';
 import { ProductCard } from '@/components/product-card';
+import { CalendarView } from '@/components/CalendarView';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -47,6 +48,7 @@ export default function UserProfilePage() {
   const [isOrdering, setIsOrdering] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<CommunicationOffer | null>(null);
   const [questionText, setQuestionText] = useState('');
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -57,7 +59,11 @@ export default function UserProfilePage() {
   const { data: userProfile, isLoading: loading } = useDoc<UserProfile>(userDocRef);
   
   const offersQuery = useMemoFirebase(
-    () => (id ? query(collection(firestore, 'communicationOffers'), where('ownerId', '==', id), where('status', '==', 'active')) : null),
+    () => (id ? query(
+      collection(firestore, 'communicationOffers'), 
+      where('ownerId', '==', id), 
+      where('status', '==', 'active')
+    ) : null),
     [id, firestore]
   );
   const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
@@ -76,16 +82,25 @@ export default function UserProfilePage() {
 
   const online = isInstantOnline(userProfile?.availability);
 
-  const categories = useMemo(() => {
+  // Filter out scheduled offers from the main "Services" list, they go to the calendar
+  const instantOffers = useMemo(() => {
     if (!offers) return [];
-    return Array.from(new Set(offers.map(o => o.categoryId))).sort();
+    return offers.filter(o => o.schedulingType !== 'scheduled');
   }, [offers]);
 
-  const filteredOffers = useMemo(() => {
+  const scheduledOffers = useMemo(() => {
     if (!offers) return [];
-    if (!selectedCategory) return offers;
-    return offers.filter(o => o.categoryId === selectedCategory);
-  }, [offers, selectedCategory]);
+    return offers.filter(o => o.schedulingType === 'scheduled');
+  }, [offers]);
+
+  const categories = useMemo(() => {
+    return Array.from(new Set(instantOffers.map(o => o.categoryId))).sort();
+  }, [instantOffers]);
+
+  const filteredOffers = useMemo(() => {
+    if (!selectedCategory) return instantOffers;
+    return instantOffers.filter(o => o.categoryId === selectedCategory);
+  }, [instantOffers, selectedCategory]);
 
   useEffect(() => {
     if (categories.length > 0 && !selectedCategory) setSelectedCategory(categories[0]);
@@ -155,6 +170,22 @@ export default function UserProfilePage() {
           <UserAvatar user={userProfile} className="h-32 w-32 border-4 border-card" />
           <h1 className="mt-4 text-3xl font-bold">{userProfile.name}</h1>
           <p className="mt-4 max-w-prose text-foreground/80">{userProfile.bio}</p>
+          
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Button 
+              variant="outline" 
+              className="rounded-full flex items-center gap-2"
+              onClick={() => setIsCalendarOpen(true)}
+            >
+              <Calendar className="h-4 w-4 text-primary" />
+              <span>Календар</span>
+              {scheduledOffers.length > 0 && (
+                <span className="bg-primary text-primary-foreground text-[10px] px-1.5 py-0.5 rounded-full">
+                  {scheduledOffers.length}
+                </span>
+              )}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -187,26 +218,28 @@ export default function UserProfilePage() {
           )}
         </section>
 
-        {/* Секція Пропозицій Комунікації */}
+        {/* Секція Пропозицій Комунікації (Instant) */}
         <section className="space-y-6">
           <h2 className="text-2xl font-bold tracking-tight">Послуги комунікації</h2>
           {loadingOffers ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <Skeleton className="h-48 w-full" />
             </div>
-          ) : offers && offers.length > 0 ? (
+          ) : instantOffers.length > 0 ? (
             <div className="space-y-8">
-              <Carousel className="w-full">
-                <CarouselContent className="-ml-2">
-                  {categories.map((cat) => (
-                    <CarouselItem key={cat} className="pl-2 basis-auto">
-                      <Button variant={selectedCategory === cat ? "default" : "outline"} className="rounded-full" onClick={() => setSelectedCategory(cat)}>
-                        {cat}
-                      </Button>
-                    </CarouselItem>
-                  ))}
-                </CarouselContent>
-              </Carousel>
+              {categories.length > 1 && (
+                <Carousel className="w-full">
+                  <CarouselContent className="-ml-2">
+                    {categories.map((cat) => (
+                      <CarouselItem key={cat} className="pl-2 basis-auto">
+                        <Button variant={selectedCategory === cat ? "default" : "outline"} className="rounded-full" onClick={() => setSelectedCategory(cat)}>
+                          {cat}
+                        </Button>
+                      </CarouselItem>
+                    ))}
+                  </CarouselContent>
+                </Carousel>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 {filteredOffers.map((offer) => (
                   <Card key={offer.id} className="border-primary/10 hover:border-primary/30 transition-colors">
@@ -235,7 +268,7 @@ export default function UserProfilePage() {
               </div>
             </div>
           ) : (
-            <p className="text-center text-muted-foreground py-12 border border-dashed rounded-xl">Немає доступних пропозицій.</p>
+            <p className="text-center text-muted-foreground py-12 border border-dashed rounded-xl">Немає доступних миттєвих пропозицій.</p>
           )}
         </section>
 
@@ -269,6 +302,19 @@ export default function UserProfilePage() {
           <DialogFooter className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => setSelectedOffer(null)}>Скасувати</Button><Button className="flex-1 bg-green-600 text-white" onClick={handleCreateRequest} disabled={!questionText.trim() || isOrdering}>{isOrdering ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Підтвердити'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Calendar Overlay */}
+      {isCalendarOpen && (
+        <Dialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+          <DialogContent className="sm:max-w-xl p-0 overflow-hidden">
+            <CalendarView 
+              userId={id} 
+              onClose={() => setIsCalendarOpen(false)} 
+              offers={scheduledOffers} 
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

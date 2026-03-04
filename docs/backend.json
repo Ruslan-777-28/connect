@@ -52,6 +52,24 @@
         "lastMessagePreview": { "type": "string" }
       }
     },
+    "CommunicationOffer": {
+      "title": "CommunicationOffer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "file", "text"] },
+        "schedulingType": { "type": "string", "enum": ["instant", "scheduled"], "default": "instant" },
+        "scheduledStart": { "type": "string", "format": "date-time" },
+        "scheduledEnd": { "type": "string", "format": "date-time" },
+        "durationMinutes": { "type": "number" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "pricing": { "type": "object" },
+        "status": { "type": "string", "enum": ["active", "inactive", "booked"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
     "Product": {
       "title": "Digital Product",
       "type": "object",
@@ -164,6 +182,10 @@
       {
         "path": "/communicationRequests/{requestId}",
         "definition": { "entityName": "CommunicationRequest", "schema": { "$ref": "#/backend/entities/CommunicationRequest" } }
+      },
+      {
+        "path": "/communicationOffers/{offerId}",
+        "definition": { "entityName": "CommunicationOffer", "schema": { "$ref": "#/backend/entities/CommunicationOffer" } }
       },
       {
         "path": "/products/{productId}",

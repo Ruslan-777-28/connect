@@ -109,17 +109,24 @@ export type Pricing = {
   ratePerMinute?: number;
   ratePerFile?: number;
   ratePerQuestion?: number;
+  ratePerSession?: number;
   currency: string;
 };
+
+export type SchedulingType = 'instant' | 'scheduled';
 
 export type CommunicationOffer = {
   id: string;
   ownerId: string;
   type: 'video' | 'file' | 'text';
+  schedulingType: SchedulingType;
+  scheduledStart?: Timestamp | any;
+  scheduledEnd?: Timestamp | any;
+  durationMinutes?: number;
   categoryId: string;
   subcategoryId: string;
   pricing: Pricing;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'booked';
   createdAt: Timestamp | any;
   updatedAt: Timestamp | any;
 };
