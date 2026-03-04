@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, RefreshCw, Edit2, Send, Loader2 } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -47,9 +47,6 @@ export default function UserProfilePage() {
   const [questionText, setQuestionText] = useState('');
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string | null>(null);
-
-  const isOwner = currentUser?.uid === id;
 
   const userDocRef = useMemoFirebase(
     () => (id ? doc(firestore, 'users', id) : null),
@@ -76,23 +73,28 @@ export default function UserProfilePage() {
     return Array.from(new Set(offers.map(o => o.categoryId))).sort();
   }, [offers]);
 
-  const subcategories = useMemo(() => {
-    if (!offers || !selectedCategory) return [];
-    return Array.from(new Set(offers.filter(o => o.categoryId === selectedCategory).map(o => o.subcategoryId))).sort();
-  }, [offers, selectedCategory]);
-
   const filteredOffers = useMemo(() => {
-    if (!offers || !selectedCategory || !selectedSubcategory) return [];
-    return offers.filter(o => o.categoryId === selectedCategory && o.subcategoryId === selectedSubcategory);
-  }, [offers, selectedCategory, selectedSubcategory]);
+    if (!offers) return [];
+    if (!selectedCategory) return offers;
+    return offers.filter(o => o.categoryId === selectedCategory);
+  }, [offers, selectedCategory]);
 
   useEffect(() => {
     if (categories.length > 0 && !selectedCategory) setSelectedCategory(categories[0]);
   }, [categories, selectedCategory]);
 
-  useEffect(() => {
-    if (subcategories.length > 0 && !selectedSubcategory) setSelectedSubcategory(subcategories[0]);
-  }, [subcategories, selectedSubcategory]);
+  const handleOrderClick = (offer: CommunicationOffer) => {
+    if (!currentUser) {
+      toast({
+        variant: 'destructive',
+        title: 'Потрібна авторизація',
+        description: 'Будь ласка, увійдіть в систему, щоб зробити замовлення.',
+        action: <ToastAction altText="Login" onClick={() => router.push('/login')}>Увійти</ToastAction>
+      });
+      return;
+    }
+    setSelectedOffer(offer);
+  };
 
   const handleCreateRequest = async () => {
     if (!selectedOffer || !currentUser) return;
@@ -118,7 +120,12 @@ export default function UserProfilePage() {
 
   const handleCallClick = async (offerId: string) => {
     if (!userProfile || !currentUser) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Log in to place a call.' });
+      toast({ 
+        variant: 'destructive', 
+        title: 'Потрібна авторизація', 
+        description: 'Увійдіть, щоб здійснити виклик.',
+        action: <ToastAction altText="Login" onClick={() => router.push('/login')}>Увійти</ToastAction>
+      });
       return;
     }
     setIsCalling(true);
@@ -148,13 +155,24 @@ export default function UserProfilePage() {
       <div className="space-y-6">
         <h2 className="text-2xl font-bold tracking-tight">Пропозиції</h2>
         
-        {loadingOffers ? <Skeleton className="h-48 w-full" /> : offers && offers.length > 0 ? (
+        {loadingOffers ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Skeleton className="h-48 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : offers && offers.length > 0 ? (
           <div className="space-y-8">
             <Carousel className="w-full">
               <CarouselContent className="-ml-2">
                 {categories.map((cat) => (
                   <CarouselItem key={cat} className="pl-2 basis-auto">
-                    <Button variant={selectedCategory === cat ? "default" : "outline"} className="rounded-full" onClick={() => setSelectedCategory(cat)}>{cat}</Button>
+                    <Button 
+                      variant={selectedCategory === cat ? "default" : "outline"} 
+                      className="rounded-full" 
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat}
+                    </Button>
                   </CarouselItem>
                 ))}
               </CarouselContent>
@@ -162,14 +180,23 @@ export default function UserProfilePage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {filteredOffers.map((offer) => (
-                <Card key={offer.id} className="border-primary/10">
+                <Card key={offer.id} className="border-primary/10 hover:border-primary/30 transition-colors">
                   <CardContent className="p-6 flex flex-col h-full gap-4">
                     <div className="flex justify-between">
                       <div className="flex items-center gap-3">
                         <div className="rounded-full bg-primary/10 p-2 text-primary">
-                          {offer.type === 'video' ? <Video className="h-5 w-5" /> : offer.type === 'file' ? <FileText className="h-5 w-5" /> : <HelpCircle className="h-5 w-5" />}
+                          {offer.type === 'video' ? (
+                            <Video className="h-5 w-5" />
+                          ) : offer.type === 'file' ? (
+                            <FileText className="h-5 w-5" />
+                          ) : (
+                            <HelpCircle className="h-5 w-5" />
+                          )}
                         </div>
-                        <h3 className="font-semibold text-sm capitalize">{offer.subcategoryId}</h3>
+                        <div>
+                          <h3 className="font-semibold text-sm capitalize">{offer.subcategoryId}</h3>
+                          <span className="text-[10px] text-muted-foreground uppercase">{offer.type}</span>
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold">
@@ -180,40 +207,62 @@ export default function UserProfilePage() {
                     </div>
 
                     <Button 
-                      className={cn("w-full mt-auto", offer.type !== 'video' && "bg-green-600 hover:bg-green-700")}
+                      className={cn(
+                        "w-full mt-auto font-bold", 
+                        offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground"
+                      )}
                       disabled={isCalling || (offer.type === 'video' && !online)}
                       onClick={() => {
-                        if (offer.type === 'video') handleCallClick(offer.id);
-                        else setSelectedOffer(offer);
+                        if (offer.type === 'video') {
+                          handleCallClick(offer.id);
+                        } else {
+                          handleOrderClick(offer);
+                        }
                       }}
                     >
-                      {offer.type === 'video' ? <><Phone className="mr-2 h-4 w-4" /> Виклик</> : <><Send className="mr-2 h-4 w-4" /> Замовити</>}
+                      {offer.type === 'video' ? (
+                        <><Phone className="mr-2 h-4 w-4" /> Виклик</>
+                      ) : (
+                        <><Send className="mr-2 h-4 w-4" /> Замовити</>
+                      )}
                     </Button>
                   </CardContent>
                 </Card>
               ))}
             </div>
           </div>
-        ) : <p className="text-center text-muted-foreground">Немає пропозицій.</p>}
+        ) : (
+          <p className="text-center text-muted-foreground py-12 border border-dashed rounded-xl">
+            Немає доступних пропозицій.
+          </p>
+        )}
       </div>
 
       {/* Order Dialog */}
-      <Dialog open={!!selectedOffer} onOpenChange={o => !o && setSelectedOffer(null)}>
-        <DialogContent>
+      <Dialog open={!!selectedOffer} onOpenChange={(open) => !open && setSelectedOffer(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Нове замовлення</DialogTitle>
-            <DialogDescription>Введіть ваше запитання нижче. Сума винагороди буде зарезервована.</DialogDescription>
+            <DialogDescription>
+              Введіть ваше запитання нижче. Сума винагороди буде зарезервована на вашому балансі до моменту підтвердження отримання відповіді.
+            </DialogDescription>
           </DialogHeader>
-          <Textarea 
-            placeholder="Ваше запитання..." 
-            className="min-h-[120px]" 
-            value={questionText} 
-            onChange={e => setQuestionText(e.target.value)} 
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSelectedOffer(null)}>Скасувати</Button>
-            <Button className="bg-green-600" onClick={handleCreateRequest} disabled={!questionText || isOrdering}>
-              {isOrdering ? <Loader2 className="animate-spin" /> : 'Підтвердити'}
+          <div className="py-4">
+            <Textarea 
+              placeholder="Ваше запитання фахівцю..." 
+              className="min-h-[150px] resize-none" 
+              value={questionText} 
+              onChange={e => setQuestionText(e.target.value)} 
+            />
+          </div>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button variant="outline" className="flex-1" onClick={() => setSelectedOffer(null)}>Скасувати</Button>
+            <Button 
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white" 
+              onClick={handleCreateRequest} 
+              disabled={!questionText.trim() || isOrdering}
+            >
+              {isOrdering ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Підтвердити замовлення'}
             </Button>
           </DialogFooter>
         </DialogContent>
