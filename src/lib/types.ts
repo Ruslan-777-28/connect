@@ -154,3 +154,13 @@ export type Favorite = {
   type: FavoriteType;
   createdAt: Timestamp | any;
 };
+
+export type LikeType = 'post' | 'product';
+
+export type Like = {
+  id: string;
+  uid: string;
+  targetId: string;
+  type: LikeType;
+  createdAt: Timestamp | any;
+};

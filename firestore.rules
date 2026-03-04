@@ -90,6 +90,14 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // ---------- Likes ----------
+    match /likes/{likeId} {
+      allow read: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
     match /calls/{callId} {
       function isCallParticipant() {
         return isSignedIn() && (

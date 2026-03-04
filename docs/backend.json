@@ -125,6 +125,19 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "uid", "targetId", "type", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "type": "object",
+      "description": "Represents a user's like on a post or product.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["post", "product"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "targetId", "type", "createdAt"]
     }
   },
   "auth": {
@@ -159,6 +172,10 @@
       {
         "path": "/favorites/{favoriteId}",
         "definition": { "entityName": "Favorite", "schema": { "$ref": "#/backend/entities/Favorite" } }
+      },
+      {
+        "path": "/likes/{likeId}",
+        "definition": { "entityName": "Like", "schema": { "$ref": "#/backend/entities/Like" } }
       }
     ]
   }

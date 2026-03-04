@@ -11,6 +11,7 @@ import { doc } from 'firebase/firestore';
 import { UserAvatar } from './user-avatar';
 import { Skeleton } from './ui/skeleton';
 import { FavoriteButton } from './FavoriteButton';
+import { LikeButton } from './LikeButton';
 
 interface PostCardProps {
   post: Post;
@@ -78,14 +79,17 @@ export function PostCard({ post, userId, showAuthor }: PostCardProps) {
               {post.content}
             </p>
             <div className="flex items-center justify-between text-[9px] text-muted-foreground uppercase font-bold tracking-wider pt-2 border-t border-primary/5">
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                {formattedDate}
-              </span>
-              <span className="flex items-center gap-1">
-                <Eye className="h-3 w-3" />
-                {post.viewCount || 0}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {formattedDate}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Eye className="h-3 w-3" />
+                  {post.viewCount || 0}
+                </span>
+              </div>
+              <LikeButton targetId={post.id} type="post" />
             </div>
           </CardContent>
         </Card>

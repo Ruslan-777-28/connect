@@ -11,6 +11,7 @@ import { doc } from 'firebase/firestore';
 import { UserAvatar } from './user-avatar';
 import { Skeleton } from './ui/skeleton';
 import { FavoriteButton } from './FavoriteButton';
+import { LikeButton } from './LikeButton';
 
 interface ProductCardProps {
   product: DigitalProduct;
@@ -75,8 +76,11 @@ export function ProductCard({ product, showAuthor }: ProductCardProps) {
             </p>
             
             <div className="flex items-center justify-between pt-2 border-t border-primary/5">
-               <span className="text-[9px] text-muted-foreground uppercase font-medium">{product.subcategoryId}</span>
-               <ShoppingCart className="h-3 w-3 text-primary" />
+               <div className="flex items-center gap-2">
+                 <span className="text-[9px] text-muted-foreground uppercase font-medium">{product.subcategoryId}</span>
+                 <ShoppingCart className="h-3 w-3 text-primary" />
+               </div>
+               <LikeButton targetId={product.id} type="product" />
             </div>
           </CardContent>
         </Card>
