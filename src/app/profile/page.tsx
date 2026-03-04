@@ -217,7 +217,8 @@ export default function ProfilePage() {
                 <Layout className="h-8 w-8 opacity-20" />
                 <p>Ви ще не опублікували жодного посту.</p>
               </CardContent>
-            )}
+            </Card>
+          )}
         </section>
       </div>
     </div>
