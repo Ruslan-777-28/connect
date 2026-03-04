@@ -190,6 +190,45 @@ exports.createCommunicationRequest = onCall(
   }
 );
 
+// --- COMM REQUEST: ACCEPT ---
+exports.acceptCommunicationRequest = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const uid = requireAuth(request);
+    const requestId = assertNonEmptyString(request.data?.requestId, "requestId");
+
+    const db = admin.firestore();
+    const reqRef = db.doc(`communicationRequests/${requestId}`);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(reqRef);
+      if (!snap.exists) throw new HttpsError("not-found", "REQUEST_NOT_FOUND");
+      const req = snap.data();
+
+      if (req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_AUTHOR");
+      if (req.status !== "pending") throw new HttpsError("failed-precondition", "NOT_PENDING");
+
+      tx.update(reqRef, {
+        status: "accepted",
+        acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Notification to initiator
+      const nRef = db.collection("notifications").doc();
+      tx.set(nRef, buildNotification({
+        uid: req.initiatorId,
+        channel: "user",
+        kind: "request_accepted",
+        requestId,
+        title: "Запит прийнято",
+        body: "Професіонал прийняв ваш запит і готує відповідь."
+      }));
+    });
+
+    return { ok: true };
+  }
+);
+
 // --- COMM REQUEST: POST ANSWER ---
 exports.postAnswer = onCall(
   { region: "us-central1" },
@@ -205,8 +244,9 @@ exports.postAnswer = onCall(
       const snap = await tx.get(reqRef);
       if (!snap.exists) throw new HttpsError("not-found", "REQUEST_NOT_FOUND");
       const req = snap.data();
+
       if (req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_AUTHOR");
-      if (req.status !== "pending") throw new HttpsError("failed-precondition", "NOT_PENDING");
+      if (req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_ACCEPTED");
 
       tx.set(reqRef.collection("messages").doc(), {
         senderId: uid,
@@ -252,6 +292,7 @@ exports.confirmReceiptAndCapture = onCall(
       const reqSnap = await tx.get(reqRef);
       if (!reqSnap.exists) throw new HttpsError("not-found", "REQUEST_NOT_FOUND");
       const req = reqSnap.data();
+
       if (req.initiatorId !== uid) throw new HttpsError("permission-denied", "NOT_INITIATOR");
       if (req.status !== "answered") throw new HttpsError("failed-precondition", "NOT_ANSWERED");
 
@@ -326,7 +367,7 @@ exports.declineCommunicationRequest = onCall(
       if (!reqSnap.exists) return;
       const req = reqSnap.data();
       if (req.initiatorId !== uid && req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_PARTICIPANT");
-      if (req.status !== "pending") throw new HttpsError("failed-precondition", "NOT_PENDING");
+      if (req.status !== "pending" && req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_CANCELLABLE");
 
       const holdRef = db.doc(`walletHolds/${req.holdId}`);
       const holdSnap = await tx.get(holdRef);
@@ -394,7 +435,7 @@ exports.expireCommunicationRequests = onSchedule(
     const db = admin.firestore();
     const now = tsNow();
     const snap = await db.collection("communicationRequests")
-      .where("status", "in", ["pending", "answered"])
+      .where("status", "in", ["pending", "accepted", "answered"])
       .where("expiresAt", "<=", now).limit(100).get();
 
     for (const docSnap of snap.docs) {
@@ -414,7 +455,6 @@ exports.expireCommunicationRequests = onSchedule(
         }
         tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
         
-        // Notifications to both
         const n1 = db.collection("notifications").doc();
         tx.set(n1, buildNotification({
           uid: req.payerId,
@@ -423,15 +463,6 @@ exports.expireCommunicationRequests = onSchedule(
           requestId: docSnap.id,
           title: "Запит прострочено",
           body: "Минуло 24 години. Резерв знято."
-        }));
-        const n2 = db.collection("notifications").doc();
-        tx.set(n2, buildNotification({
-          uid: req.authorId,
-          channel: "user",
-          kind: "request_expired",
-          requestId: docSnap.id,
-          title: "Запит прострочено",
-          body: "Минуло 24 години. Запит автоматично закрито."
         }));
       });
     }
