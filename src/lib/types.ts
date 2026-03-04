@@ -1,4 +1,10 @@
+
 import type { Timestamp } from 'firebase/firestore';
+
+export type Availability = {
+  status: 'online' | 'offline';
+  until?: Timestamp;
+};
 
 export type UserProfile = {
   id: string;
@@ -6,17 +12,110 @@ export type UserProfile = {
   email: string;
   bio?: string;
   avatarUrl?: string;
+  balance: number;
+  held: number;
+  currency?: 'COIN' | string;
   createdAt: Timestamp | any;
   updatedAt?: Timestamp | any;
+  balanceUpdatedAt?: Timestamp | any;
+  availability?: Availability;
 };
 
-export type Call = {
+export type MessageKind = 'question' | 'answer' | 'file' | 'system';
+
+export type Message = {
   id: string;
-  callerUid: string;
-  calleeUid: string;
-  status: 'ringing' | 'accepted' | 'ended' | 'declined';
+  senderId: string;
+  kind: MessageKind;
+  text?: string;
+  fileMeta?: any;
+  createdAt: Timestamp | any;
+};
+
+export type CommunicationRequest = {
+  id: string;
+  initiatorId: string;
+  authorId: string;
+  payerId: string;
+  payeeId: string;
+  type: 'video' | 'text' | 'file';
+  status: 'pending' | 'accepted' | 'answered' | 'completed' | 'declined' | 'expired' | 'ringing';
+  offerId: string;
+  pricingSnapshot: any;
+  reservedCoins: number;
+  holdId: string;
+  createdAt: Timestamp | any;
+  expiresAt: Timestamp | any;
+  answeredAt?: Timestamp | any;
+  completedAt?: Timestamp | any;
+  lastMessageAt: Timestamp | any;
+  lastMessagePreview?: string;
+  fileMeta?: any;
+};
+
+export type Notification = {
+  id: string;
+  uid: string;
+  channel: 'system' | 'user';
+  kind: string;
+  requestId?: string;
+  title: string;
+  body: string;
+  createdAt: Timestamp | any;
+  readAt: Timestamp | any | null;
+};
+
+export type WalletHold = {
+  id: string;
+  uid: string;
+  amount: number;
+  currency: string;
+  status: 'held' | 'captured' | 'released';
+  refType: string;
+  refId: string;
+  createdAt: Timestamp | any;
+  expiresAt: Timestamp | any;
+};
+
+export type WalletLedgerEntry = {
+  id: string;
+  uid: string;
+  type: 'topup' | 'call_payment' | 'payout';
+  amount: number;
+  currency: string;
+  balanceAfter?: number;
+  createdAt: Timestamp | any;
+  status: 'posted' | 'pending' | 'failed';
+  callId?: string;
+  kind?: string;
+  metadata?: any;
+};
+
+export type Pricing = {
+  ratePerMinute?: number;
+  ratePerFile?: number;
+  ratePerQuestion?: number;
+  currency: string;
+};
+
+export type CommunicationOffer = {
+  id: string;
+  ownerId: string;
+  type: 'video' | 'file' | 'text';
+  categoryId: string;
+  subcategoryId: string;
+  pricing: Pricing;
+  status: 'active' | 'inactive';
+  createdAt: Timestamp | any;
+  updatedAt: Timestamp | any;
+};
+
+export type Call = CommunicationRequest & {
   roomUrl?: string;
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
+  roomName?: string;
+  billedMinutes?: number;
+  billedCoins?: number;
+  acceptedAtTs?: Timestamp | null;
+  endedAtTs?: Timestamp | null;
   caller?: UserProfile;
 };

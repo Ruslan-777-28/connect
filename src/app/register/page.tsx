@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -71,12 +72,16 @@ export default function RegisterPage() {
         email: values.email,
         bio: '',
         avatarUrl: '',
+        balance: 0,
+        currency: 'COIN',
       };
 
       setDocumentNonBlocking(doc(firestore, 'users', user.uid), {
         id: user.uid,
         ...userProfile,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        balanceUpdatedAt: serverTimestamp(),
       }, { merge: false });
 
       toast({

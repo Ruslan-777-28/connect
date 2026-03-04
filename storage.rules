@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service firebase.storage {
@@ -7,20 +8,29 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
     }
 
     // Rules for user avatars
     match /avatars/{userId} {
-      // Any signed-in user can read avatars.
       allow read: if isSignedIn();
-
-      // Only the authenticated user can upload or update their own avatar.
-      // The image must be smaller than 5MB.
-      allow write: if isOwner(userId)
+      allow write: if isSelf(userId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+    }
+
+    // uploads/{uid}/... only by owner, only JPEG, size <= 10MB
+    match /uploads/{uid}/{allPaths=**} {
+      allow read: if isSelf(uid);
+      allow write: if isSelf(uid)
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType == "image/jpeg";
+    }
+
+    // deny all other paths by default
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

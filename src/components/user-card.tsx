@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -5,34 +6,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { UserAvatar } from '@/components/user-avatar';
 import type { UserProfile } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { Phone } from 'lucide-react';
-import { startCallAction } from '@/lib/actions';
-import { useToast } from '@/hooks/use-toast';
+import { User } from 'lucide-react';
+import { isInstantOnline } from '@/lib/availability';
 
 interface UserCardProps {
   user: UserProfile;
 }
 
 export function UserCard({ user }: UserCardProps) {
-  const { toast } = useToast();
-
-  const handleCallClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    try {
-      await startCallAction(user.id);
-      toast({
-        title: 'Calling...',
-        description: `Calling ${user.name}.`,
-      });
-    } catch (error: any) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message || 'Could not initiate call.',
-      });
-    }
-  };
+  const online = isInstantOnline(user.availability);
 
   return (
     <Link href={`/users/${user.id}`} className="group">
@@ -40,17 +22,23 @@ export function UserCard({ user }: UserCardProps) {
         <CardContent className="flex flex-col items-center p-6 text-center">
           <UserAvatar
             user={user}
-            className="mb-4 h-24 w-24 border-2 border-primary/20"
+            className="mb-4 h-24 w-24"
           />
           <h3 className="text-lg font-semibold text-foreground">{user.name}</h3>
-          <p className="text-sm text-muted-foreground">{user.email}</p>
+          <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem] mb-4">
+            {user.bio || 'No bio available.'}
+          </p>
+
           <Button
-            variant="outline"
-            size="icon"
-            className="mt-4"
-            onClick={handleCallClick}
+            variant={online ? "default" : "secondary"}
+            size="sm"
+            className="w-full"
+            asChild
           >
-            <Phone className="h-4 w-4" />
+            <div>
+              <User className="h-4 w-4 mr-2" />
+              <span>View Profile</span>
+            </div>
           </Button>
         </CardContent>
       </Card>

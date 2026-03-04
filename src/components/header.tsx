@@ -1,131 +1,82 @@
-'use client';
 
+'use client';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { Menu, MessageSquare, Bell } from 'lucide-react';
+import { Button } from './ui/button';
+import { AvailabilitySwitch } from './AvailabilitySwitch';
+import { useUser, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, where, limit } from 'firebase/firestore';
+import { useAvailability } from '@/hooks/useAvailability';
+import { Skeleton } from './ui/skeleton';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useMemo } from 'react';
-import { doc } from 'firebase/firestore';
-import {
-  Home,
-  User,
-  LogOut,
-  LogIn,
-  UserPlus,
-  Shield,
-  Menu,
-} from 'lucide-react';
-import { useUser, useAuth, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { UserAvatar } from './user-avatar';
-import { UserProfile } from '@/lib/types';
 
 export function Header() {
-  const { user } = useUser();
-  const auth = useAuth();
+  const { isMobile } = useSidebar();
+  const { user, isUserLoading } = useUser();
   const firestore = useFirestore();
-  const pathname = usePathname();
-  
-  const userDocRef = useMemoFirebase(
-    () => (user ? doc(firestore, 'users', user.uid) : null),
+  const { availability, isLoading: isAvailabilityLoading } = useAvailability(
+    user?.uid
+  );
+
+  // Check for unread notifications
+  const unreadQuery = useMemoFirebase(
+    () => (user ? query(
+      collection(firestore, 'notifications'),
+      where('uid', '==', user.uid),
+      where('readAt', '==', null),
+      limit(1)
+    ) : null),
     [user, firestore]
   );
-  
-  const { data: userProfile } = useDoc<UserProfile>(userDocRef);
+  const { data: unreadNotifs } = useCollection(unreadQuery);
+  const hasUnread = unreadNotifs && unreadNotifs.length > 0;
 
-  const logout = () => {
-    auth.signOut();
-  };
+  if (!isMobile) {
+    return null;
+  }
 
-  const navLinks = user
-    ? [
-        { href: '/', label: 'Home', icon: Home },
-        { href: '/profile', label: 'Profile', icon: User },
-      ]
-    : [
-        { href: '/login', label: 'Login', icon: LogIn },
-        { href: '/register', label: 'Register', icon: UserPlus },
-      ];
-
-  const isActive = (href: string) => {
-    return href === '/' ? pathname === href : pathname.startsWith(href);
-  };
+  const isLoading = isUserLoading || isAvailabilityLoading;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-card/80 backdrop-blur-md">
-      <div className="container mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-        <Link
-          href="/"
-          className="text-2xl font-bold text-primary transition-colors hover:text-primary/80"
-        >
-          ConnectU
-        </Link>
+    <header className="sticky top-0 z-40 grid h-16 grid-cols-3 items-center border-b bg-card/80 px-4 backdrop-blur-md">
+      <div className="flex justify-start">
+        <SidebarTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Toggle sidebar">
+            <Menu className="h-6 w-6" />
+          </Button>
+        </SidebarTrigger>
+      </div>
 
-        <nav className="hidden items-center gap-2 md:flex">
-          {navLinks.map(({ href, label, icon: Icon }) => (
-            <Button
-              key={label}
-              variant="ghost"
-              asChild
-              className={cn(
-                isActive(href) &&
-                  'bg-accent text-accent-foreground',
-                'justify-start'
-              )}
-            >
-              <Link href={href}>
-                <Icon className="mr-2 h-4 w-4" />
-                {label}
+      <div className="flex justify-center">
+        {isLoading ? (
+          <Skeleton className="h-8 w-36" />
+        ) : user ? (
+          <AvailabilitySwitch
+            initialAvailability={availability}
+            labelClassName="text-foreground"
+          />
+        ) : null}
+      </div>
+
+      <div className="flex justify-end gap-1">
+        {user && (
+          <>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/chats">
+                <MessageSquare className="h-5 w-5" />
               </Link>
             </Button>
-          ))}
-          {user && (
-            <Button variant="ghost" onClick={logout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
+            <Button variant="ghost" size="icon" asChild className="relative">
+              <Link href="/notifications">
+                <Bell className="h-5 w-5" />
+                {hasUnread && (
+                  <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-destructive border-2 border-card" />
+                )}
+              </Link>
             </Button>
-          )}
-        </nav>
-        {user && userProfile && (
-          <div className="hidden md:block">
-            <UserAvatar user={userProfile} className="h-8 w-8" />
-          </div>
+          </>
         )}
-
-        <div className="md:hidden">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {navLinks.map(({ href, label, icon: Icon }) => (
-                <DropdownMenuItem key={label} asChild>
-                  <Link href={href}>
-                    <Icon className="mr-2 h-4 w-4" />
-                    <span>{label}</span>
-                  </Link>
-                </DropdownMenuItem>
-              ))}
-              {user && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    <span>Logout</span>
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
       </div>
     </header>
   );

@@ -1,126 +1,105 @@
+
 {
   "entities": {
     "UserProfile": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "UserProfile",
       "type": "object",
       "description": "Represents a user's profile in the ConnectU application.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the UserProfile entity, matching the Firebase Auth UID."
-        },
-        "email": {
-          "type": "string",
-          "description": "User's email address.",
-          "format": "email"
-        },
-        "name": {
-          "type": "string",
-          "description": "User's full name."
-        },
-        "avatarUrl": {
-          "type": "string",
-          "description": "URL of the user's profile picture.",
-          "format": "uri"
-        },
-        "bio": {
-          "type": "string",
-          "description": "User's biography or short description."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Timestamp indicating when the user profile was created.",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Timestamp indicating when the user profile was last updated.",
-          "format": "date-time"
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string", "format": "uri" },
+        "bio": { "type": "string" },
+        "balance": { "type": "number", "default": 0 },
+        "held": { "type": "number", "default": 0, "description": "Reserved coins for pending requests" },
+        "currency": { "type": "string", "default": "COIN" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "balanceUpdatedAt": { "type": "string", "format": "date-time" },
+        "availability": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["online", "offline"] },
+            "until": { "type": "string", "format": "date-time" }
+          }
         }
       },
-      "required": [
-        "id",
-        "email",
-        "name",
-        "createdAt"
-      ]
+      "required": ["id", "email", "name", "createdAt", "balance"]
     },
-    "Call": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Call",
+    "CommunicationRequest": {
+      "title": "CommunicationRequest",
       "type": "object",
-      "description": "Represents a call between two users.",
+      "description": "Represents a communication request (Video, Q&A or File).",
       "properties": {
-        "callerUid": {
-          "type": "string",
-          "description": "The UID of the user who initiated the call."
-        },
-        "calleeUid": {
-          "type": "string",
-          "description": "The UID of the user who is being called."
-        },
-        "status": {
-          "type": "string",
-          "enum": ["ringing", "accepted", "ended", "declined"]
-        },
-        "roomUrl": {
-          "type": "string",
-          "description": "URL for the video/audio call room."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["callerUid", "calleeUid", "status", "createdAt", "updatedAt"]
+        "id": { "type": "string" },
+        "initiatorId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "payerId": { "type": "string" },
+        "payeeId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "text", "file"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "answered", "completed", "declined", "expired", "ringing"] },
+        "offerId": { "type": "string" },
+        "pricingSnapshot": { "type": "object" },
+        "reservedCoins": { "type": "number" },
+        "holdId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "answeredAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "lastMessagePreview": { "type": "string" }
+      }
+    },
+    "Message": {
+      "title": "Message",
+      "type": "object",
+      "description": "A single message in a communication thread.",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "kind": { "type": "string", "enum": ["question", "answer", "file", "system"] },
+        "text": { "type": "string" },
+        "fileMeta": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Notification": {
+      "title": "Notification",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "channel": { "type": "string", "enum": ["system", "user"] },
+        "kind": { "type": "string" },
+        "requestId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "readAt": { "type": "string", "format": "date-time", "nullable": true }
+      }
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
     "structure": [
       {
         "path": "/users/{userId}",
-        "definition": {
-          "entityName": "UserProfile",
-          "schema": {
-            "$ref": "#/backend/entities/UserProfile"
-          },
-          "description": "Stores user profile information.  Path-based ownership ensures only the authenticated user can access their own profile.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user, corresponding to the Firebase Auth UID."
-            }
-          ]
-        }
+        "definition": { "entityName": "UserProfile", "schema": { "$ref": "#/backend/entities/UserProfile" } }
       },
       {
-        "path": "/calls/{callId}",
-        "definition": {
-          "entityName": "Call",
-          "schema": {
-            "$ref": "#/backend/entities/Call"
-          },
-          "description": "Stores information about calls between users.",
-          "params": [
-            {
-              "name": "callId",
-              "description": "The unique identifier for the call."
-            }
-          ]
-        }
+        "path": "/communicationRequests/{requestId}",
+        "definition": { "entityName": "CommunicationRequest", "schema": { "$ref": "#/backend/entities/CommunicationRequest" } }
+      },
+      {
+        "path": "/communicationRequests/{requestId}/messages/{messageId}",
+        "definition": { "entityName": "Message", "schema": { "$ref": "#/backend/entities/Message" } }
+      },
+      {
+        "path": "/notifications/{notificationId}",
+        "definition": { "entityName": "Notification", "schema": { "$ref": "#/backend/entities/Notification" } }
       }
-    ],
-    "reasoning": "The Firestore data structure is designed to support user authentication, profile management, user listings, and profile viewing features of the ConnectU application, adhering to the core design principles and strategy mandates.\n\n**Authorization Independence:** User profiles are stored directly under the `/users/{userId}` path, ensuring ownership is directly tied to the path. This eliminates the need for `get()` calls in security rules to verify ownership, thus achieving Authorization Independence.\n\n**Structural Segregation:** User profiles are stored in a dedicated collection (`/users/{userId}`), which simplifies security rules by ensuring that all documents in the collection share the same security requirements (i.e., only the authenticated user can read/write their own profile).\n\n**Access Modeling:** Path-based ownership (`/users/{userId}`) is used for user profiles, which naturally secures user data to only be accessible by the authenticated user.\n\n**QAPs (Rules are not Filters):** The structure supports secure `list` operations because profiles are stored with the user's ID as the document ID.  Listing users for the 'Home' page only requires reading the desired fields (`name`, `avatarUrl`) and does not expose any private or sensitive data without explicit authorization (e.g., email).\n\nThe structure inherently supports invariants such as ensuring that only the authenticated user can modify their profile and that timestamps are automatically managed during profile creation and updates."
+    ]
   }
 }
