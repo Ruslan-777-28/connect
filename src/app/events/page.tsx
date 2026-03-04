@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo } from 'react';
@@ -20,7 +19,7 @@ export default function EventsPage() {
 
   // 1. My created scheduled offers (as pro)
   const myOffersQuery = useMemoFirebase(
-    () => (user ? query(
+    () => (user?.uid ? query(
       collection(firestore, 'communicationOffers'),
       where('ownerId', '==', user.uid),
       where('schedulingType', '==', 'scheduled'),
@@ -31,7 +30,7 @@ export default function EventsPage() {
 
   // 2. My booked requests (as client)
   const myBookingsQuery = useMemoFirebase(
-    () => (user ? query(
+    () => (user?.uid ? query(
       collection(firestore, 'communicationRequests'),
       where('initiatorId', '==', user.uid),
       where('type', '==', 'video'),
@@ -110,7 +109,7 @@ export default function EventsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-[11px] text-primary/80 leading-relaxed">
-                Створюйте заплановані відеозустрічі через кнопку <b>Create > Комунікація</b>. Вони автоматично з'являться тут і будуть доступні клієнтам у вашому профілі.
+                Створюйте заплановані відеозустрічі через кнопку <b>Create &gt; Комунікація</b>. Вони автоматично з&apos;являться тут і будуть доступні клієнтам у вашому профілі.
               </p>
             </CardContent>
           </Card>
