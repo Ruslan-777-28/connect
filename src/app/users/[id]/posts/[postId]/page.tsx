@@ -5,44 +5,13 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Eye, Calendar, User } from 'lucide-react';
-import { useDoc, useFirestore, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { ArrowLeft, Eye, Calendar, User, Layout, Loader2 } from 'lucide-react';
+import { useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { doc, collection, query, where, orderBy, limit } from 'firebase/firestore';
 import type { Post, UserProfile } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PostCard } from '@/components/post-card';
-
-// Demo data for the feed below the main post
-const DEMO_ALL_POSTS: Post[] = [
-  {
-    id: '1',
-    authorId: 'demo',
-    title: 'Основи успішної комунікації',
-    content: 'У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим і як правильно ставити запитання, щоб отримати максимум інформації. Ми також розглянемо психологічні аспекти взаємодії та способи вирішення конфліктних ситуацій ще на етапі їх зародження.',
-    imageUrl: 'https://picsum.photos/seed/post1/600/400',
-    viewCount: 154,
-    createdAt: new Date('2024-09-12'),
-  },
-  {
-    id: '2',
-    authorId: 'demo',
-    title: 'Нові тренди в дизайні 2024',
-    content: 'Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року. Від мінімалізму до нео-футуризму. Ми дослідимо кольорові палітри, які стануть популярними, та нові підходи до типографіки, що допомагають виділитися на фоні конкурентів.',
-    imageUrl: 'https://picsum.photos/seed/post2/600/400',
-    viewCount: 89,
-    createdAt: new Date('2024-09-05'),
-  },
-  {
-    id: '3',
-    authorId: 'demo',
-    title: 'Як працювати з клієнтами',
-    content: 'Практичні поради щодо управління очікуваннями клієнтів та побудови довгострокових відносин у фрілансі. Як правильно формувати комерційні пропозиції та захищати свої кордони.',
-    imageUrl: 'https://picsum.photos/seed/post3/600/400',
-    viewCount: 210,
-    createdAt: new Date('2024-08-28'),
-  }
-];
 
 export default function ExpandedPostPage() {
   const params = useParams();
@@ -54,13 +23,40 @@ export default function ExpandedPostPage() {
   const userDocRef = useMemoFirebase(() => doc(firestore, 'users', id), [firestore, id]);
   const { data: userProfile, isLoading: userLoading } = useDoc<UserProfile>(userDocRef);
 
-  // In a real app, we would fetch the specific post from Firestore
-  // For now, we find it in our demo data
-  const currentPost = DEMO_ALL_POSTS.find(p => p.id === postId) || DEMO_ALL_POSTS[0];
+  const postDocRef = useMemoFirebase(() => doc(firestore, 'posts', postId), [firestore, postId]);
+  const { data: currentPost, isLoading: postLoading } = useDoc<Post>(postDocRef);
 
-  const date = currentPost.createdAt instanceof Date 
-    ? currentPost.createdAt 
-    : (currentPost.createdAt?.toDate?.() || new Date(currentPost.createdAt));
+  const otherPostsQuery = useMemoFirebase(() => 
+    query(
+      collection(firestore, 'posts'),
+      where('authorId', '==', id),
+      orderBy('createdAt', 'desc'),
+      limit(6)
+    ), [firestore, id]);
+  
+  const { data: otherPosts, isLoading: otherLoading } = useCollection<Post>(otherPostsQuery);
+
+  if (postLoading) {
+    return (
+      <div className="container mx-auto max-w-4xl px-4 py-8 flex flex-col items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="mt-4 text-muted-foreground">Завантаження публікації...</p>
+      </div>
+    );
+  }
+
+  if (!currentPost) {
+    return (
+      <div className="container mx-auto max-w-4xl px-4 py-8 text-center">
+        <h1 className="text-2xl font-bold">Публікацію не знайдено</h1>
+        <Button variant="link" onClick={() => router.back()} className="mt-4">
+          Повернутися назад
+        </Button>
+      </div>
+    );
+  }
+
+  const date = currentPost.createdAt?.toDate?.() || new Date(currentPost.createdAt);
     
   const formattedDate = date.toLocaleDateString('uk-UA', {
     day: 'numeric',
@@ -76,20 +72,24 @@ export default function ExpandedPostPage() {
         onClick={() => router.back()}
       >
         <ArrowLeft className="mr-2 h-4 w-4" />
-        Назад до профілю
+        Назад
       </Button>
 
       <div className="grid gap-12">
         {/* Повний пост */}
         <article className="space-y-6">
           <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-muted shadow-lg">
-            {currentPost.imageUrl && (
+            {currentPost.imageUrl ? (
               <Image 
                 src={currentPost.imageUrl} 
                 alt={currentPost.title}
                 fill
                 className="object-cover"
               />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-primary/5 text-muted-foreground/20 italic">
+                Немає зображення
+              </div>
             )}
           </div>
 
@@ -102,7 +102,7 @@ export default function ExpandedPostPage() {
               </span>
               <span className="flex items-center gap-1.5 bg-muted px-2 py-1 rounded">
                 <Eye className="h-4 w-4" />
-                {currentPost.viewCount} ПЕРЕГЛЯДІВ
+                {currentPost.viewCount || 0} ПЕРЕГЛЯДІВ
               </span>
             </div>
           </div>
@@ -144,11 +144,21 @@ export default function ExpandedPostPage() {
             </Button>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {DEMO_ALL_POSTS.filter(p => p.id !== postId).map((post) => (
-              <PostCard key={post.id} post={post} userId={id} />
-            ))}
-          </div>
+          {otherLoading ? (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-48 w-full rounded-xl" />)}
+            </div>
+          ) : otherPosts && otherPosts.length > 1 ? (
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {otherPosts.filter(p => p.id !== postId).map((post) => (
+                <PostCard key={post.id} post={post} userId={id} />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground italic border border-dashed rounded-xl">
+               У автора більше немає інших публікацій.
+            </div>
+          )}
         </section>
       </div>
     </div>

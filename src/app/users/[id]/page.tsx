@@ -3,14 +3,14 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { doc, collection, query, where } from 'firebase/firestore';
+import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp, useCollection } from '@/firebase';
 import type { UserProfile, CommunicationOffer, Post } from '@/lib/types';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2 } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -32,37 +32,6 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { PostCard } from '@/components/post-card';
-
-// Demo posts
-const DEMO_POSTS: Post[] = [
-  {
-    id: '1',
-    authorId: 'demo',
-    title: 'Основи успішної комунікації',
-    content: 'У цій статті ми розберемо основні принципи того, як ефективно спілкуватися з клієнтами та партнерами. Чому активне слухання є ключовим.',
-    imageUrl: 'https://picsum.photos/seed/post1/600/400',
-    viewCount: 154,
-    createdAt: new Date('2024-09-12'),
-  },
-  {
-    id: '2',
-    authorId: 'demo',
-    title: 'Нові тренди в дизайні 2024',
-    content: 'Огляд актуальних напрямків, які будуть домінувати в індустрії протягом наступного року. Від мінімалізму до нео-футуризму.',
-    imageUrl: 'https://picsum.photos/seed/post2/600/400',
-    viewCount: 89,
-    createdAt: new Date('2024-09-05'),
-  },
-  {
-    id: '3',
-    authorId: 'demo',
-    title: 'Як працювати з клієнтами',
-    content: 'Практичні поради щодо управління очікуваннями клієнтів та побудови довгострокових відносин у фрілансі.',
-    imageUrl: 'https://picsum.photos/seed/post3/600/400',
-    viewCount: 210,
-    createdAt: new Date('2024-08-28'),
-  }
-];
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -97,6 +66,17 @@ export default function UserProfilePage() {
   );
   
   const { data: offers, isLoading: loadingOffers } = useCollection<CommunicationOffer>(offersQuery);
+
+  const postsQuery = useMemoFirebase(
+    () => (id ? query(
+      collection(firestore, 'posts'),
+      where('authorId', '==', id),
+      orderBy('createdAt', 'desc')
+    ) : null),
+    [id, firestore]
+  );
+
+  const { data: userPosts, isLoading: loadingPosts } = useCollection<Post>(postsQuery);
 
   const online = isInstantOnline(userProfile?.availability);
 
@@ -276,21 +256,35 @@ export default function UserProfilePage() {
         <section className="space-y-6">
           <h2 className="text-2xl font-bold tracking-tight">Публікації</h2>
           
-          <Carousel
-            opts={{
-              align: "start",
-              loop: false,
-            }}
-            className="w-full"
-          >
-            <CarouselContent className="-ml-2 md:-ml-4">
-              {DEMO_POSTS.map((post) => (
-                <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
-                  <PostCard post={post} userId={id} />
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </Carousel>
+          {loadingPosts ? (
+            <div className="flex gap-4">
+              <Skeleton className="h-48 w-64 rounded-xl" />
+              <Skeleton className="h-48 w-64 rounded-xl" />
+            </div>
+          ) : userPosts && userPosts.length > 0 ? (
+            <Carousel
+              opts={{
+                align: "start",
+                loop: false,
+              }}
+              className="w-full"
+            >
+              <CarouselContent className="-ml-2 md:-ml-4">
+                {userPosts.map((post) => (
+                  <CarouselItem key={post.id} className="pl-2 md:pl-4 basis-[85%] sm:basis-[45%] lg:basis-[33%]">
+                    <PostCard post={post} userId={id} />
+                  </CarouselItem>
+                ))}
+              </CarouselContent>
+            </Carousel>
+          ) : (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                <Layout className="h-8 w-8 opacity-20" />
+                <p>У цього автора ще немає публікацій.</p>
+              </CardContent>
+            </Card>
+          )}
         </section>
       </div>
 
