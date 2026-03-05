@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useUser, useFirestore, useDoc, useMemoFirebase, useFirebaseApp, useCollection } from '@/firebase';
 import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -36,6 +36,7 @@ export default function WalletPage() {
 
   const [isActionLoading, setIsActionLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('pending');
+  const [currentTime, setCurrentTime] = useState(Date.now());
   
   // Modals state
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -44,13 +45,17 @@ export default function WalletPage() {
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 30000); // update every 30s
+    return () => clearInterval(timer);
+  }, []);
+
   const userDocRef = useMemoFirebase(
     () => (user?.uid ? doc(firestore, 'users', user.uid) : null),
     [user?.uid, firestore]
   );
   const { data: profile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
 
-  // Queries
   const authorReqQuery = useMemoFirebase(() => 
     user?.uid ? query(collection(firestore, 'communicationRequests'), where('authorId', '==', user.uid), orderBy('lastMessageAt', 'desc')) : null,
   [user?.uid, firestore]);
@@ -84,7 +89,6 @@ export default function WalletPage() {
       await callable({ requestId, ...data });
       toast({ title: 'Успішно', description: 'Дію виконано.' });
       
-      // Close all modals
       setIsAnswerModalOpen(false);
       setIsConfirmModalOpen(false);
       setIsDetailsModalOpen(false);
@@ -100,7 +104,6 @@ export default function WalletPage() {
     if (!user || !request.offerId) return;
     setIsActionLoading(request.id);
     try {
-      // Find the receiver (the other party)
       const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
       const { callId } = await startVideoCall(app, receiverId, request.offerId);
       router.push(`/call/${callId}`);
@@ -109,6 +112,20 @@ export default function WalletPage() {
     } finally {
       setIsActionLoading(null);
     }
+  };
+
+  const isCallTime = (req: CommunicationRequest) => {
+    if (!req.scheduledStart || !req.scheduledEnd) return true; // Online calls are always ok
+    
+    const start = req.scheduledStart.toMillis() - 5 * 60000; // 5 mins before
+    const end = req.scheduledEnd.toMillis();
+    return currentTime >= start && currentTime <= end;
+  };
+
+  const getCallTimeLabel = (req: CommunicationRequest) => {
+    if (!req.scheduledStart) return null;
+    const start = req.scheduledStart.toDate();
+    return start.toLocaleString('uk-UA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   };
 
   const renderIcon = (type: string) => {
@@ -185,42 +202,49 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  <div className="flex gap-1">
-                    {/* Video Start Call Button (for both parties when accepted) */}
+                  {item.scheduledStart && (
+                    <div className="text-[10px] bg-primary/5 p-2 rounded flex items-center gap-2 text-primary font-bold">
+                      <Clock className="h-3 w-3" />
+                      ЧАС СЕАНСУ: {getCallTimeLabel(item)}
+                    </div>
+                  )}
+
+                  <div className="flex gap-1 flex-col sm:flex-row">
                     {item.type === 'video' && item.status === 'accepted' && (
-                      <Button 
-                        size="sm" 
-                        className="flex-1 bg-primary h-8 text-[11px]" 
-                        onClick={() => handleCall(item)} 
-                        disabled={isActionLoading === item.id}
-                      >
-                        {isActionLoading === item.id ? <Loader2 className="animate-spin h-3 w-3 mr-1" /> : <Phone className="h-3 w-3 mr-1" />}
-                        Виклик
-                      </Button>
+                      <div className="flex flex-col flex-1 gap-1">
+                        <Button 
+                          size="sm" 
+                          className={cn("flex-1 h-8 text-[11px]", isCallTime(item) ? "bg-primary" : "bg-muted text-muted-foreground")} 
+                          onClick={() => handleCall(item)} 
+                          disabled={isActionLoading === item.id || !isCallTime(item)}
+                        >
+                          {isActionLoading === item.id ? <Loader2 className="animate-spin h-3 w-3 mr-1" /> : <Phone className="h-3 w-3 mr-1" />}
+                          Виклик
+                        </Button>
+                        {!isCallTime(item) && item.scheduledStart && (
+                          <p className="text-[8px] text-center text-muted-foreground">Доступно тільки в час запису</p>
+                        )}
+                      </div>
                     )}
 
-                    {/* Professional side in Pending */}
                     {activeTab === 'pending' && item.authorId === user?.uid && (
-                      <>
+                      <div className="flex gap-1 flex-1">
                         <Button size="sm" className="flex-1 bg-green-600 h-8 text-[11px]" onClick={() => handleAction('acceptCommunicationRequest', item.id)} disabled={isActionLoading === item.id}>Прийняти</Button>
                         <Button size="sm" variant="outline" className="flex-1 h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsDetailsModalOpen(true); }}>Деталі</Button>
                         <Button size="sm" variant="destructive" className="flex-1 h-8 text-[11px]" onClick={() => handleAction('declineCommunicationRequest', item.id)} disabled={isActionLoading === item.id}>Відхилити</Button>
-                      </>
+                      </div>
                     )}
                     
-                    {/* Professional side in I Owe (Accepted - Text/File) */}
                     {activeTab === 'i_owe' && item.type !== 'video' && (
                       <Button size="sm" className="w-full h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsAnswerModalOpen(true); }}>Відповісти</Button>
                     )}
 
-                    {/* Initiator side in Owed to Me (Answered) or completion prompt for Video */}
                     {activeTab === 'owed_to_me' && (item.status === 'answered' || (item.type === 'video' && item.status === 'accepted')) && (
                       <Button size="sm" className="w-full bg-green-600 h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsConfirmModalOpen(true); }}>
                         {item.type === 'video' ? 'Завершити та Оплатити' : 'Підтвердити та Оплатити'}
                       </Button>
                     )}
                     
-                    {/* General info for initiator in Pending */}
                     {activeTab === 'pending' && item.initiatorId === user?.uid && (
                       <span className="text-xs text-muted-foreground italic w-full text-center py-2">Очікуємо прийняття професіоналом...</span>
                     )}

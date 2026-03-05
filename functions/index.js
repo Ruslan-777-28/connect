@@ -100,20 +100,17 @@ exports.onCommentCreated = onDocumentCreated(
       const post = postSnap.data();
       const authorId = post.authorId;
 
-      // Don't notify if the author is commenting on their own post
       if (comment.uid === authorId) return;
 
-      // Get commenter name
       const commenterSnap = await db.doc(`users/${comment.uid}`).get();
       const commenterName = commenterSnap.exists ? commenterSnap.data().name : "Користувач";
 
-      // Create notification for the post author
       const nRef = db.collection("notifications").doc();
       await nRef.set(buildNotification({
         uid: authorId,
         channel: "user",
         kind: "new_comment",
-        requestId: postId, // Using requestId field to store postId for easy navigation
+        requestId: postId,
         title: "Новий коментар",
         body: `${commenterName} прокоментував вашу публікацію "${post.title}".`
       }));
@@ -139,6 +136,8 @@ exports.createCommunicationRequest = onCall(
     let reservedCoins = 0;
     let authorId = "";
     let pricingSnapshot = { currency: COIN_CURRENCY };
+    let scheduledStart = null;
+    let scheduledEnd = null;
 
     if (productId) {
       const prodSnap = await db.doc(`products/${productId}`).get();
@@ -158,6 +157,8 @@ exports.createCommunicationRequest = onCall(
       
       if (offer.schedulingType === 'scheduled') {
         reservedCoins = Number(pricingSnapshot.ratePerSession || 0);
+        scheduledStart = offer.scheduledStart;
+        scheduledEnd = offer.scheduledEnd;
       } else {
         reservedCoins = type === "text"
           ? Number(pricingSnapshot.ratePerQuestion || 0)
@@ -213,6 +214,8 @@ exports.createCommunicationRequest = onCall(
         expiresAt,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
         lastMessagePreview: questionText.slice(0, 120),
+        scheduledStart,
+        scheduledEnd,
         ...(fileMeta ? { fileMeta } : {}),
       });
 
@@ -230,6 +233,10 @@ exports.createCommunicationRequest = onCall(
           fileMeta,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
+      }
+
+      if (offerId) {
+        tx.update(db.doc(`communicationOffers/${offerId}`), { status: 'booked' });
       }
 
       const nRef = db.collection("notifications").doc();
@@ -270,7 +277,6 @@ exports.acceptCommunicationRequest = onCall(
         acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 
-      // For digital products, we automatically "answer" it if there's delivery text
       if (req.type === 'product' && req.productId) {
         const prodSnap = await tx.get(db.doc(`products/${req.productId}`));
         if (prodSnap.exists) {
@@ -466,6 +472,10 @@ exports.declineCommunicationRequest = onCall(
         declineReason: reason, lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      if (req.offerId) {
+        tx.update(db.doc(`communicationOffers/${req.offerId}`), { status: 'active' });
+      }
+
       tx.set(reqRef.collection("messages").doc(), {
         senderId: "system", kind: "system", text: `Cancelled: ${reason}`,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -483,26 +493,6 @@ exports.declineCommunicationRequest = onCall(
       }));
     });
 
-    return { ok: true };
-  }
-);
-
-// --- NOTIFICATION: MARK READ ---
-exports.markNotificationRead = onCall(
-  { region: "us-central1" },
-  async (request) => {
-    const uid = requireAuth(request);
-    const notificationId = assertNonEmptyString(request.data?.notificationId, "notificationId");
-    const db = admin.firestore();
-    const nRef = db.doc(`notifications/${notificationId}`);
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(nRef);
-      if (!snap.exists) return;
-      if (snap.data().uid !== uid) throw new HttpsError("permission-denied", "NOT_YOUR_NOTIFICATION");
-      if (snap.data().readAt) return;
-      tx.update(nRef, { readAt: admin.firestore.FieldValue.serverTimestamp() });
-    });
     return { ok: true };
   }
 );
@@ -534,7 +524,70 @@ exports.expireCommunicationRequests = onSchedule(
           }
         }
         tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
+        if (req.offerId) {
+          tx.update(db.doc(`communicationOffers/${req.offerId}`), { status: 'active' });
+        }
       });
+    }
+  }
+);
+
+// Cleanup expired scheduled offers that were never booked
+exports.cleanupExpiredOffers = onSchedule(
+  { region: "us-central1", schedule: "every 1 hours" },
+  async () => {
+    const db = admin.firestore();
+    const now = tsNow();
+    const snap = await db.collection("communicationOffers")
+      .where("schedulingType", "==", "scheduled")
+      .where("status", "==", "active")
+      .where("scheduledEnd", "<", now)
+      .limit(100).get();
+
+    const batch = db.batch();
+    snap.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    logger.info(`Cleaned up ${snap.docs.length} expired offers.`);
+  }
+);
+
+// Send reminders for upcoming calls
+exports.sendCallReminders = onSchedule(
+  { region: "us-central1", schedule: "every 5 minutes" },
+  async () => {
+    const db = admin.firestore();
+    const now = Date.now();
+    const reminderWindow = now + 10 * 60000; // Starting in next 10 mins
+    
+    const snap = await db.collection("communicationRequests")
+      .where("status", "==", "accepted")
+      .where("type", "==", "video")
+      .where("scheduledStart", ">=", admin.firestore.Timestamp.fromMillis(now))
+      .where("scheduledStart", "<=", admin.firestore.Timestamp.fromMillis(reminderWindow))
+      .limit(50).get();
+
+    for (const docSnap of snap.docs) {
+      const req = docSnap.data();
+      const requestId = docSnap.id;
+      
+      // Check if reminder already sent
+      const alreadySent = await db.collection("notifications")
+        .where("requestId", "==", requestId)
+        .where("kind", "==", "call_reminder")
+        .limit(1).get();
+
+      if (alreadySent.empty) {
+        const participants = [req.initiatorId, req.authorId];
+        for (const uid of participants) {
+          await db.collection("notifications").add(buildNotification({
+            uid, channel: "user", kind: "call_reminder", requestId,
+            title: "Нагадування про дзвінок",
+            body: "Ваш запланований відеочат розпочнеться за декілька хвилин. Будьте готові!"
+          }));
+        }
+      }
     }
   }
 );

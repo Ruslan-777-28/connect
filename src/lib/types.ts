@@ -52,6 +52,9 @@ export type CommunicationRequest = {
   lastMessageAt: Timestamp | any;
   lastMessagePreview?: string;
   fileMeta?: any;
+  // Scheduled call specific fields
+  scheduledStart?: Timestamp | any;
+  scheduledEnd?: Timestamp | any;
 };
 
 export type DigitalProduct = {
