@@ -18,7 +18,7 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Camera, Package } from 'lucide-react';
+import { Loader2, ArrowLeft, Camera, Package, FileUp, X } from 'lucide-react';
 
 const categories = [
   { 
@@ -45,9 +45,14 @@ export default function CreateProductPage() {
   const [deliveryText, setDeliveryText] = useState('');
   const [price, setPrice] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [deliveryFile, setDeliveryFile] = useState<File | null>(null);
+  const [deliveryPreview, setDeliveryPreview] = useState<string | null>(null);
+  const deliveryInputRef = useRef<HTMLInputElement>(null);
 
   const subOptions = useMemo(
     () => categories.find(c => c.id === categoryId)?.subs ?? [],
@@ -65,6 +70,14 @@ export default function CreateProductPage() {
       const file = e.target.files[0];
       setImageFile(file);
       setImagePreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleDeliveryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setDeliveryFile(file);
+      setDeliveryPreview(URL.createObjectURL(file));
     }
   };
 
@@ -88,12 +101,19 @@ export default function CreateProductPage() {
     setIsSaving(true);
 
     try {
+      const storage = getStorage();
       let imageUrl = '';
       if (imageFile) {
-        const storage = getStorage();
-        const storageRef = ref(storage, `products/${user.uid}/${Date.now()}_${imageFile.name}`);
+        const storageRef = ref(storage, `products/${user.uid}/showcase_${Date.now()}_${imageFile.name}`);
         const snapshot = await uploadBytes(storageRef, imageFile);
         imageUrl = await getDownloadURL(snapshot.ref);
+      }
+
+      let deliveryImageUrl = '';
+      if (deliveryFile) {
+        const deliveryRef = ref(storage, `products/${user.uid}/delivery_${Date.now()}_${deliveryFile.name}`);
+        const snapshot = await uploadBytes(deliveryRef, deliveryFile);
+        deliveryImageUrl = await getDownloadURL(snapshot.ref);
       }
 
       await addDoc(collection(firestore, 'products'), {
@@ -104,6 +124,7 @@ export default function CreateProductPage() {
         description: description.trim(),
         deliveryText: deliveryText.trim(),
         imageUrl,
+        deliveryImageUrl,
         price: priceNum,
         createdAt: serverTimestamp(),
       });
@@ -134,25 +155,29 @@ export default function CreateProductPage() {
       </h1>
 
       <div className="space-y-6">
-        <div 
-          className="relative aspect-square w-full max-w-sm mx-auto overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted flex flex-col items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {imagePreview ? (
-            <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
-          ) : (
-            <>
-              <Camera className="h-8 w-8 text-muted-foreground mb-2" />
-              <span className="text-sm text-muted-foreground">Зображення вітрини</span>
-            </>
-          )}
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            accept="image/*" 
-            onChange={handleImageChange} 
-          />
+        {/* Showcase Image */}
+        <div className="space-y-2">
+          <Label>Зображення вітрини</Label>
+          <div 
+            className="relative aspect-square w-full max-w-sm mx-auto overflow-hidden rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted flex flex-col items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {imagePreview ? (
+              <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+            ) : (
+              <>
+                <Camera className="h-8 w-8 text-muted-foreground mb-2" />
+                <span className="text-sm text-muted-foreground text-center px-4">Фото для вітрини (те, що бачать усі)</span>
+              </>
+            )}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleImageChange} 
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -196,10 +221,53 @@ export default function CreateProductPage() {
           <Input id="price" type="number" placeholder="100" value={price} onChange={(e) => setPrice(e.target.value)} />
         </div>
 
-        <div className="space-y-2 rounded-lg bg-primary/5 p-4 border border-primary/20">
-          <Label htmlFor="delivery" className="text-primary font-bold">Контент для передачі</Label>
-          <p className="text-[10px] text-muted-foreground mb-2 italic">Цей текст користувач отримає автоматично після підтвердження оплати (посилання, ключ, доступ тощо).</p>
-          <Textarea id="delivery" placeholder="Посилання на файл або секретний ключ..." className="min-h-[100px] border-primary/20" value={deliveryText} onChange={(e) => setDeliveryText(e.target.value)} />
+        {/* Delivery Content Section */}
+        <div className="space-y-4 rounded-xl bg-primary/5 p-6 border border-primary/20">
+          <h3 className="text-primary font-bold flex items-center gap-2">
+            <FileUp className="h-5 w-5" /> Контент для передачі покупцеві
+          </h3>
+          <p className="text-[11px] text-muted-foreground leading-relaxed italic">
+            Ці дані користувач отримає автоматично лише ПІСЛЯ підтвердження оплати. Сюди можна додати посилання, ключі доступу або конфіденційне зображення.
+          </p>
+          
+          <div className="space-y-2">
+            <Label htmlFor="delivery-image">Зображення для передачі (опційно)</Label>
+            <div 
+              className="relative h-32 w-full overflow-hidden rounded-lg border-2 border-dashed border-primary/30 bg-background flex flex-col items-center justify-center cursor-pointer hover:bg-primary/5 transition-colors"
+              onClick={() => deliveryInputRef.current?.click()}
+            >
+              {deliveryPreview ? (
+                <div className="relative h-full w-full">
+                  <img src={deliveryPreview} alt="Delivery" className="h-full w-full object-contain" />
+                  <Button 
+                    size="icon" 
+                    variant="destructive" 
+                    className="absolute top-1 right-1 h-6 w-6 rounded-full"
+                    onClick={(e) => { e.stopPropagation(); setDeliveryFile(null); setDeliveryPreview(null); }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-primary/60">
+                  <Camera className="h-6 w-6" />
+                  <span className="text-[10px] font-bold">ОБРАТИ ФАЙЛ</span>
+                </div>
+              )}
+              <input 
+                type="file" 
+                ref={deliveryInputRef} 
+                className="hidden" 
+                accept="image/*" 
+                onChange={handleDeliveryChange} 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="delivery">Текстове повідомлення</Label>
+            <Textarea id="delivery" placeholder="Посилання на файл або секретний ключ..." className="min-h-[100px] border-primary/20 bg-background" value={deliveryText} onChange={(e) => setDeliveryText(e.target.value)} />
+          </div>
         </div>
 
         <Button className="w-full" size="lg" onClick={onSubmit} disabled={isSaving}>

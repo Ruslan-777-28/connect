@@ -65,6 +65,7 @@ export type DigitalProduct = {
   title: string;
   description: string;
   imageUrl?: string;
+  deliveryImageUrl?: string;
   deliveryText: string;
   price: number;
   createdAt: Timestamp | any;

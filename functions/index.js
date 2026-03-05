@@ -281,12 +281,26 @@ exports.acceptCommunicationRequest = onCall(
         const prodSnap = await tx.get(db.doc(`products/${req.productId}`));
         if (prodSnap.exists) {
           const prod = prodSnap.data();
+          
+          // Send delivery text
           tx.set(reqRef.collection("messages").doc(), {
             senderId: uid,
             kind: "answer",
             text: prod.deliveryText || "Дякуємо за покупку!",
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
+
+          // Send delivery image if exists
+          if (prod.deliveryImageUrl) {
+            tx.set(reqRef.collection("messages").doc(), {
+              senderId: uid,
+              kind: "answer",
+              text: "Delivery Content Image",
+              fileMeta: { mime: 'image/jpeg', storagePath: prod.deliveryImageUrl, size: 0 },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
           updates.status = "answered";
           updates.answeredAt = admin.firestore.FieldValue.serverTimestamp();
           updates.lastMessageAt = admin.firestore.FieldValue.serverTimestamp();
@@ -604,6 +618,29 @@ exports.startCall = onCall(
     const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
     if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
     const offer = offerSnap.data();
+
+    // Availability switch logic
+    if (offer.schedulingType === 'instant') {
+      const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+      if (receiverSnap.exists) {
+        const receiver = receiverSnap.data();
+        const isOnline = receiver.availability?.status === 'online';
+        const until = receiver.availability?.until;
+        const expired = until && (until.toMillis() < Date.now());
+        
+        if (!isOnline || expired) {
+          throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
+        }
+      }
+    } else {
+      // For scheduled calls, ensure it's call time (e.g. +/- 5 min window)
+      const now = Date.now();
+      const start = offer.scheduledStart.toMillis() - 5 * 60000;
+      const end = offer.scheduledEnd.toMillis();
+      if (now < start || now > end) {
+        throw new HttpsError("failed-precondition", "NOT_CALL_TIME");
+      }
+    }
 
     const pricingSnapshot = {
       type: offer.type,
