@@ -6,7 +6,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Video, Clock, ChevronRight, CheckCircle2, Loader2, X } from 'lucide-react';
+import { Video, Clock, ChevronRight, CheckCircle2, Loader2, X, Calendar as CalendarIcon } from 'lucide-react';
 import type { CommunicationOffer } from '@/lib/types';
 import { useUser, useFirebaseApp } from '@/firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
