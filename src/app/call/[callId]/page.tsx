@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -43,7 +44,6 @@ export default function CallPage() {
   }, [app, callId]);
 
   useEffect(() => {
-    // General cleanup for the redirect timer on component unmount
     return () => {
       if (redirectTimerRef.current) {
         clearTimeout(redirectTimerRef.current);
@@ -52,9 +52,11 @@ export default function CallPage() {
   }, []);
 
   useEffect(() => {
+    // If no credentials in session storage, kick user out after a short delay
+    // unless they are a participant and we can recover state (advanced MVP)
     if (!tokenExists) {
       if (!redirectTimerRef.current) {
-        redirectTimerRef.current = setTimeout(() => router.replace('/'), 1500);
+        redirectTimerRef.current = setTimeout(() => router.replace('/'), 2000);
       }
       return;
     }
@@ -79,14 +81,13 @@ export default function CallPage() {
           sessionStorage.removeItem(`dailyRoomUrl:${callId}`);
           
           if (!redirectTimerRef.current) {
-            redirectTimerRef.current = setTimeout(() => router.replace('/'), 800);
+            redirectTimerRef.current = setTimeout(() => router.replace('/'), 1200);
           }
         }
       },
       (err) => {
         console.error('Call doc listener error:', err);
         setLoading(false);
-        // This is an error case, a quick redirect is fine.
         router.replace('/');
       }
     );
@@ -110,51 +111,59 @@ export default function CallPage() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-sm">
+    <div className="flex min-h-[calc(100vh-4rem)] w-full items-center justify-center bg-muted/20 p-4">
+      <Card className="w-full max-w-sm shadow-xl">
         <CardHeader className="text-center">
-          <CardTitle>Call Lobby</CardTitle>
+          <CardTitle>Лобі виклику</CardTitle>
           <CardDescription>
-            You are about to join a video call.
+            Зачекайте підтвердження або приєднайтеся до кімнати.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center justify-center gap-4">
-          <div className="flex items-center gap-2">
-            Status:
+        <CardContent className="flex flex-col items-center justify-center gap-6 py-6">
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Статус виклику</span>
             {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             ) : (
-              <Badge variant={getStatusBadgeVariant(status)} className="capitalize">
+              <Badge variant={getStatusBadgeVariant(status)} className="px-4 py-1 text-sm capitalize">
                 {status}
               </Badge>
             )}
           </div>
-          <div className="flex w-full gap-3">
+
+          <div className="flex w-full flex-col gap-3">
             <Button
+              size="lg"
               onClick={handleJoinRoom}
-              disabled={!tokenExists || status === 'ended' || status === 'ringing'}
-              className="flex-1"
+              disabled={!tokenExists || status === 'ended' || status === 'ringing' || loading}
+              className="w-full h-12 text-base font-bold shadow-lg"
             >
-              <LogIn className="mr-2" />
-              Join Room
+              <LogIn className="mr-2 h-5 w-5" />
+              Увійти в кімнату
             </Button>
+            
             <Button
-              variant="destructive"
+              variant="outline"
+              size="lg"
               onClick={handleEnd}
               disabled={status === 'ended' || loading}
-              className="flex-1"
+              className="w-full h-12 border-destructive/20 text-destructive hover:bg-destructive/10"
             >
-              <PhoneOff className="mr-2" />
-              End Call
+              <PhoneOff className="mr-2 h-5 w-5" />
+              Завершити виклик
             </Button>
           </div>
+
           {status === 'ringing' && (
-            <p className="text-sm text-muted-foreground">Waiting for the other user to accept...</p>
+            <div className="flex flex-col items-center gap-2 text-center animate-pulse">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <p className="text-xs text-muted-foreground">Очікуємо прийняття іншим учасником...</p>
+            </div>
           )}
         </CardContent>
-        <CardFooter>
-          <p className="w-full text-center text-xs text-muted-foreground">
-            Once you join, the video will be embedded on the next page.
+        <CardFooter className="bg-muted/30 border-t pt-4">
+          <p className="w-full text-center text-[10px] text-muted-foreground leading-relaxed">
+            Приєднання до кімнати активує вашу камеру та мікрофон. <br/>Будь ласка, надайте дозвіл у браузері.
           </p>
         </CardFooter>
       </Card>

@@ -678,12 +678,18 @@ exports.acceptCall = onCall(
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
+    let roomUrl = "";
+    let token = "";
+
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(callRef);
       if (!snap.exists) throw new HttpsError("not-found", "Call not found");
       const call = snap.data();
       if (call.receiverId !== uid) throw new HttpsError("permission-denied", "Not yours");
       if (call.status !== "ringing") throw new HttpsError("failed-precondition", "Not ringing");
+
+      roomUrl = call.roomUrl || "";
+      token = call.token || "";
 
       const rate = call.pricingSnapshot.ratePerMinute || call.pricingSnapshot.ratePerSession;
       if (!rate) throw new HttpsError("failed-precondition", "NO_RATE_DEFINED");
@@ -709,7 +715,7 @@ exports.acceptCall = onCall(
       });
     });
 
-    return { ok: true };
+    return { ok: true, roomUrl, token };
   }
 );
 
