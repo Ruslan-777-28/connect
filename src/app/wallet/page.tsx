@@ -8,13 +8,14 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import type { UserProfile, CommunicationRequest, Message } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock, Video, FileText, HelpCircle, User } from 'lucide-react';
+import { Wallet, ArrowUpRight, ArrowDownLeft, History, Loader2, Clock, Video, FileText, HelpCircle, User, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { UserAvatar } from '@/components/user-avatar';
 import { cn } from '@/lib/utils';
+import { startVideoCall } from '@/lib/calls';
 import {
   Dialog,
   DialogContent,
@@ -44,18 +45,18 @@ export default function WalletPage() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   const userDocRef = useMemoFirebase(
-    () => (user ? doc(firestore, 'users', user.uid) : null),
-    [user, firestore]
+    () => (user?.uid ? doc(firestore, 'users', user.uid) : null),
+    [user?.uid, firestore]
   );
   const { data: profile, isLoading: isProfileLoading } = useDoc<UserProfile>(userDocRef);
 
   // Queries
   const authorReqQuery = useMemoFirebase(() => 
-    user ? query(collection(firestore, 'communicationRequests'), where('authorId', '==', user.uid), orderBy('lastMessageAt', 'desc')) : null,
-  [user, firestore]);
+    user?.uid ? query(collection(firestore, 'communicationRequests'), where('authorId', '==', user.uid), orderBy('lastMessageAt', 'desc')) : null,
+  [user?.uid, firestore]);
   const initReqQuery = useMemoFirebase(() => 
-    user ? query(collection(firestore, 'communicationRequests'), where('initiatorId', '==', user.uid), orderBy('lastMessageAt', 'desc')) : null,
-  [user, firestore]);
+    user?.uid ? query(collection(firestore, 'communicationRequests'), where('initiatorId', '==', user.uid), orderBy('lastMessageAt', 'desc')) : null,
+  [user?.uid, firestore]);
 
   const { data: authorRequests } = useCollection<CommunicationRequest>(authorReqQuery);
   const { data: initiatorRequests } = useCollection<CommunicationRequest>(initReqQuery);
@@ -64,7 +65,7 @@ export default function WalletPage() {
     if (activeTab === 'pending') {
       const proPending = (authorRequests || []).filter(r => r.status === 'pending');
       const userPending = (initiatorRequests || []).filter(r => r.status === 'pending');
-      return [...proPending, ...userPending].sort((a,b) => b.lastMessageAt?.toMillis() - a.lastMessageAt?.toMillis());
+      return [...proPending, ...userPending].sort((a,b) => (b.lastMessageAt?.toMillis?.() || 0) - (a.lastMessageAt?.toMillis?.() || 0));
     }
     if (activeTab === 'i_owe') {
       return (authorRequests || []).filter(r => r.status === 'accepted');
@@ -88,6 +89,21 @@ export default function WalletPage() {
       setIsConfirmModalOpen(false);
       setIsDetailsModalOpen(false);
       setAnswerText('');
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Помилка', description: e.message });
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
+  const handleCall = async (request: CommunicationRequest) => {
+    if (!user || !request.offerId) return;
+    setIsActionLoading(request.id);
+    try {
+      // Find the receiver (the other party)
+      const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
+      const { callId } = await startVideoCall(app, receiverId, request.offerId);
+      router.push(`/call/${callId}`);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Помилка', description: e.message });
     } finally {
@@ -170,6 +186,19 @@ export default function WalletPage() {
                   </div>
 
                   <div className="flex gap-1">
+                    {/* Video Start Call Button (for both parties when accepted) */}
+                    {item.type === 'video' && item.status === 'accepted' && (
+                      <Button 
+                        size="sm" 
+                        className="flex-1 bg-primary h-8 text-[11px]" 
+                        onClick={() => handleCall(item)} 
+                        disabled={isActionLoading === item.id}
+                      >
+                        {isActionLoading === item.id ? <Loader2 className="animate-spin h-3 w-3 mr-1" /> : <Phone className="h-3 w-3 mr-1" />}
+                        Виклик
+                      </Button>
+                    )}
+
                     {/* Professional side in Pending */}
                     {activeTab === 'pending' && item.authorId === user?.uid && (
                       <>
@@ -179,14 +208,16 @@ export default function WalletPage() {
                       </>
                     )}
                     
-                    {/* Professional side in I Owe (Accepted) */}
-                    {activeTab === 'i_owe' && (
+                    {/* Professional side in I Owe (Accepted - Text/File) */}
+                    {activeTab === 'i_owe' && item.type !== 'video' && (
                       <Button size="sm" className="w-full h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsAnswerModalOpen(true); }}>Відповісти</Button>
                     )}
 
-                    {/* Initiator side in Owed to Me (Answered) */}
-                    {activeTab === 'owed_to_me' && item.status === 'answered' && (
-                      <Button size="sm" className="w-full bg-green-600 h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsConfirmModalOpen(true); }}>Підтвердити та Оплатити</Button>
+                    {/* Initiator side in Owed to Me (Answered) or completion prompt for Video */}
+                    {activeTab === 'owed_to_me' && (item.status === 'answered' || (item.type === 'video' && item.status === 'accepted')) && (
+                      <Button size="sm" className="w-full bg-green-600 h-8 text-[11px]" onClick={() => { setSelectedRequestId(item.id); setIsConfirmModalOpen(true); }}>
+                        {item.type === 'video' ? 'Завершити та Оплатити' : 'Підтвердити та Оплатити'}
+                      </Button>
                     )}
                     
                     {/* General info for initiator in Pending */}

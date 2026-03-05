@@ -154,9 +154,15 @@ exports.createCommunicationRequest = onCall(
       authorId = offer.ownerId;
       pricingSnapshot.ratePerQuestion = offer.pricing?.ratePerQuestion || null;
       pricingSnapshot.ratePerFile = offer.pricing?.ratePerFile || null;
-      reservedCoins = type === "text"
-        ? Number(pricingSnapshot.ratePerQuestion || 0)
-        : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
+      pricingSnapshot.ratePerSession = offer.pricing?.ratePerSession || null;
+      
+      if (offer.schedulingType === 'scheduled') {
+        reservedCoins = Number(pricingSnapshot.ratePerSession || 0);
+      } else {
+        reservedCoins = type === "text"
+          ? Number(pricingSnapshot.ratePerQuestion || 0)
+          : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
+      }
     }
 
     if (!Number.isFinite(reservedCoins) || reservedCoins < 0) {
@@ -363,7 +369,7 @@ exports.confirmReceiptAndCapture = onCall(
       const req = reqSnap.data();
 
       if (req.initiatorId !== uid) throw new HttpsError("permission-denied", "NOT_INITIATOR");
-      if (req.status !== "answered") throw new HttpsError("failed-precondition", "NOT_ANSWERED");
+      if (req.status !== "answered" && req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_READY_FOR_CAPTURE");
 
       const amount = Number(req.reservedCoins || 0);
       
@@ -550,6 +556,7 @@ exports.startCall = onCall(
       type: offer.type,
       currency: COIN_CURRENCY,
       ratePerMinute: offer.pricing.ratePerMinute || null,
+      ratePerSession: offer.pricing.ratePerSession || null,
     };
 
     const callRef = admin.firestore().collection("calls").doc();
@@ -559,6 +566,7 @@ exports.startCall = onCall(
     const callData = {
       status: "ringing", callerId, receiverId, callerName: request.auth.token.name || "Anonymous",
       createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
+      durationMinutes: offer.durationMinutes || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -587,7 +595,9 @@ exports.acceptCall = onCall(
       if (call.receiverId !== uid) throw new HttpsError("permission-denied", "Not yours");
       if (call.status !== "ringing") throw new HttpsError("failed-precondition", "Not ringing");
 
-      const rate = call.pricingSnapshot.ratePerMinute;
+      const rate = call.pricingSnapshot.ratePerMinute || call.pricingSnapshot.ratePerSession;
+      if (!rate) throw new HttpsError("failed-precondition", "NO_RATE_DEFINED");
+
       const callerRef = db.doc(`users/${call.callerId}`);
       const receiverRef = db.doc(`users/${call.receiverId}`);
       const [callerSnap, receiverSnap] = await Promise.all([tx.get(callerRef), tx.get(receiverRef)]);
@@ -598,7 +608,15 @@ exports.acceptCall = onCall(
 
       tx.update(callerRef, { balance: callerSnap.data().balance - rate });
       tx.update(receiverRef, { balance: receiverSnap.data().balance + rate });
-      tx.update(callRef, { status: "accepted", acceptedAtTs: tsNow(), billedMinutes: 1, billedCoins: rate });
+      
+      const billedMinutes = call.pricingSnapshot.ratePerSession ? (call.durationMinutes || 30) : 1;
+      
+      tx.update(callRef, { 
+        status: "accepted", 
+        acceptedAtTs: tsNow(), 
+        billedMinutes: billedMinutes, 
+        billedCoins: rate 
+      });
     });
 
     return { ok: true };
@@ -620,7 +638,7 @@ exports.endCall = onCall(
 
       const updates = { status: "ended", endReason: reason || "ended_by_user", endedAtTs: tsNow() };
 
-      if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs) {
+      if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs && !call.pricingSnapshot.ratePerSession) {
         const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
         const totalMin = ceilMinutesByRule(elapsedSec);
         const dueMin = totalMin - call.billedMinutes;
@@ -644,7 +662,7 @@ exports.billingTickAcceptedCalls = onSchedule(
     const snap = await db.collection("calls").where("status", "==", "accepted").limit(50).get();
     for (const docSnap of snap.docs) {
       const call = docSnap.data();
-      if (call.type !== "video" || !call.acceptedAtTs) continue;
+      if (call.type !== "video" || !call.acceptedAtTs || call.pricingSnapshot.ratePerSession) continue;
       const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
       const currentFullMin = Math.floor(elapsedSec / 60);
       const dueMin = currentFullMin - call.billedMinutes + 1;
