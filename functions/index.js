@@ -83,8 +83,15 @@ function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, met
 
 // --- DAILY.CO UTILS ---
 async function fetchDaily(path, method = 'GET', body = null) {
-  const key = DAILY_API_KEY.value();
-  if (!key || key === 'your-api-key') {
+  // Отримуємо ключ і очищаємо його від зайвих символів
+  let key = "";
+  try {
+    key = DAILY_API_KEY.value().trim();
+  } catch (e) {
+    logger.error("DAILY_API_KEY secret is not accessible", e);
+  }
+
+  if (!key || key === 'your-api-key' || key.length < 10) {
     throw new HttpsError("failed-precondition", "DAILY_API_KEY_NOT_CONFIGURED");
   }
 
@@ -99,8 +106,9 @@ async function fetchDaily(path, method = 'GET', body = null) {
 
   const data = await res.json();
   if (!res.ok) {
-    logger.error("Daily API Error", data);
-    throw new HttpsError("internal", data.info || data.error || "Daily API Error");
+    logger.error("Daily API Error Details:", { status: res.status, data });
+    // Передаємо конкретну помилку від Daily
+    throw new HttpsError("internal", data.info || data.error || `Daily API Error ${res.status}`);
   }
   return data;
 }
@@ -688,8 +696,9 @@ exports.startCall = onCall(
     };
 
     // 1. Create real Daily room
+    const roomName = `call-${Date.now()}-${offerId.slice(0,5)}`;
     const room = await fetchDaily("rooms", "POST", {
-      name: `call-${Date.now()}-${offerId.slice(0,5)}`,
+      name: roomName,
       properties: {
         exp: Math.round(Date.now() / 1000) + 3600,
       }
@@ -698,7 +707,7 @@ exports.startCall = onCall(
     // 2. Create token for caller
     const tokenData = await fetchDaily("meeting-tokens", "POST", {
       properties: {
-        room_name: room.name,
+        room_name: roomName,
         user_name: request.auth.token.name || "Caller",
         is_owner: true
       }
@@ -714,7 +723,7 @@ exports.startCall = onCall(
       durationMinutes: offer.durationMinutes || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       roomUrl: room.url,
-      roomName: room.name,
+      roomName: roomName,
       token: tokenData.token
     };
 
