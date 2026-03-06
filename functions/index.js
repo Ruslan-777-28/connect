@@ -1,6 +1,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
@@ -37,10 +38,8 @@ function assertNonEmptyString(v, field, maxLen) {
 function assertJpegFileMeta(meta) {
   if (!meta || typeof meta !== "object") throw new HttpsError("invalid-argument", "fileMeta required");
   const { mime, storagePath, size } = meta;
-  if (mime !== "image/jpeg") throw new HttpsError("invalid-argument", "Only JPEG allowed");
-  if (typeof storagePath !== "string" || !storagePath.startsWith("uploads/")) {
-    throw new HttpsError("invalid-argument", "Invalid storagePath");
-  }
+  if (!mime.startsWith("image/")) throw new HttpsError("invalid-argument", "Only images allowed");
+  if (typeof storagePath !== "string") throw new HttpsError("invalid-argument", "Invalid storagePath");
   if (typeof size !== "number" || size <= 0) throw new HttpsError("invalid-argument", "Invalid file size");
   if (size > 10 * 1024 * 1024) throw new HttpsError("invalid-argument", "File too large");
   return { mime, storagePath, size, filename: meta.filename || null };
@@ -82,34 +81,122 @@ function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, met
   tx.set(creditRef, { ...entryBase, uid: toUid, type: "payout", amount: Math.abs(amount) });
 }
 
+// --- DAILY.CO UTILS ---
+async function fetchDaily(path, method = 'GET', body = null) {
+  let key = "";
+  try {
+    key = DAILY_API_KEY.value().trim();
+  } catch (e) {
+    logger.error("DAILY_API_KEY secret is not accessible", e);
+  }
+
+  if (!key || key === 'your-api-key' || key.length < 10) {
+    throw new HttpsError("failed-precondition", "DAILY_API_KEY_NOT_CONFIGURED");
+  }
+
+  const res = await fetch(`https://api.daily.co/v1/${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : null
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    logger.error("Daily API Error Details:", { status: res.status, data });
+    throw new HttpsError("internal", data.info || data.error || `Daily API Error ${res.status}`);
+  }
+  return data;
+}
+
+// --- FIRESTORE TRIGGERS ---
+
+exports.onCommentCreated = onDocumentCreated(
+  { document: "posts/{postId}/comments/{commentId}", region: "us-central1" },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+    const comment = snapshot.data();
+    const { postId } = event.params;
+
+    const db = admin.firestore();
+    
+    try {
+      const postSnap = await db.doc(`posts/${postId}`).get();
+      if (!postSnap.exists) return;
+
+      const post = postSnap.data();
+      const authorId = post.authorId;
+
+      if (comment.uid === authorId) return;
+
+      const commenterSnap = await db.doc(`users/${comment.uid}`).get();
+      const commenterName = commenterSnap.exists ? commenterSnap.data().name : "Користувач";
+
+      const nRef = db.collection("notifications").doc();
+      await nRef.set(buildNotification({
+        uid: authorId,
+        channel: "user",
+        kind: "new_comment",
+        requestId: postId,
+        title: "Новий коментар",
+        body: `${commenterName} прокоментував вашу публікацію "${post.title}".`
+      }));
+      
+      logger.info(`Notification sent to ${authorId} for comment on post ${postId}`);
+    } catch (error) {
+      logger.error("Error in onCommentCreated trigger:", error);
+    }
+  }
+);
+
 // --- COMM REQUEST: CREATE & HOLD ---
 exports.createCommunicationRequest = onCall(
   { region: "us-central1" },
   async (request) => {
     const initiatorId = requireAuth(request);
-    const offerId = assertNonEmptyString(request.data?.offerId, "offerId");
+    const offerId = request.data?.offerId ? assertNonEmptyString(request.data.offerId, "offerId") : null;
+    const productId = request.data?.productId ? assertNonEmptyString(request.data.productId, "productId") : null;
     const type = assertNonEmptyString(request.data?.type, "type");
-    const questionText = assertNonEmptyString(request.data?.questionText, "questionText", 500);
+    const questionText = assertNonEmptyString(request.data?.questionText, "questionText", 1000);
 
     const db = admin.firestore();
-    const offerSnap = await db.doc(`communicationOffers/${offerId}`).get();
-    if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
-    const offer = offerSnap.data();
+    let reservedCoins = 0;
+    let authorId = "";
+    let pricingSnapshot = { currency: COIN_CURRENCY };
+    let scheduledStart = null;
+    let scheduledEnd = null;
 
-    if (offer.type !== type) throw new HttpsError("failed-precondition", "OFFER_TYPE_MISMATCH");
-    const authorId = offer.ownerId;
+    if (productId) {
+      const prodSnap = await db.doc(`products/${productId}`).get();
+      if (!prodSnap.exists) throw new HttpsError("not-found", "PRODUCT_NOT_FOUND");
+      const prod = prodSnap.data();
+      reservedCoins = Number(prod.price || 0);
+      authorId = prod.authorId;
+      pricingSnapshot.productPrice = reservedCoins;
+    } else if (offerId) {
+      const offerSnap = await db.doc(`communicationOffers/${offerId}`).get();
+      if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
+      const offer = offerSnap.data();
+      authorId = offer.ownerId;
+      pricingSnapshot.ratePerQuestion = offer.pricing?.ratePerQuestion || null;
+      pricingSnapshot.ratePerFile = offer.pricing?.ratePerFile || null;
+      pricingSnapshot.ratePerSession = offer.pricing?.ratePerSession || null;
+      
+      if (offer.schedulingType === 'scheduled') {
+        reservedCoins = Number(pricingSnapshot.ratePerSession || 0);
+        scheduledStart = offer.scheduledStart;
+        scheduledEnd = offer.scheduledEnd;
+      } else {
+        reservedCoins = type === "text"
+          ? Number(pricingSnapshot.ratePerQuestion || 0)
+          : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
+      }
+    }
 
-    const pricingSnapshot = {
-      currency: COIN_CURRENCY,
-      ratePerQuestion: offer.pricing?.ratePerQuestion || null,
-      ratePerFile: offer.pricing?.ratePerFile || null,
-    };
-
-    const reservedCoins = type === "text"
-      ? Number(pricingSnapshot.ratePerQuestion || 0)
-      : Number((pricingSnapshot.ratePerQuestion || 0) + (pricingSnapshot.ratePerFile || 0));
-
-    if (!Number.isFinite(reservedCoins) || reservedCoins <= 0) {
+    if (!Number.isFinite(reservedCoins) || reservedCoins < 0) {
       throw new HttpsError("failed-precondition", "INVALID_PRICING");
     }
 
@@ -127,18 +214,19 @@ exports.createCommunicationRequest = onCall(
       const held = Number(u.held || 0);
       if (balance - held < reservedCoins) throw new HttpsError("failed-precondition", "INSUFFICIENT_AVAILABLE_BALANCE");
 
-      tx.set(holdRef, {
-        uid: initiatorId,
-        amount: reservedCoins,
-        currency: COIN_CURRENCY,
-        status: "held",
-        refType: "communicationRequest",
-        refId: requestRef.id,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt,
-      });
-
-      tx.update(initiatorRef, { held: held + reservedCoins });
+      if (reservedCoins > 0) {
+        tx.set(holdRef, {
+          uid: initiatorId,
+          amount: reservedCoins,
+          currency: COIN_CURRENCY,
+          status: "held",
+          refType: "communicationRequest",
+          refId: requestRef.id,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          expiresAt,
+        });
+        tx.update(initiatorRef, { held: held + reservedCoins });
+      }
 
       tx.set(requestRef, {
         type,
@@ -148,13 +236,16 @@ exports.createCommunicationRequest = onCall(
         payerId: initiatorId,
         payeeId: authorId,
         offerId,
+        productId,
         pricingSnapshot,
         reservedCoins,
-        holdId: holdRef.id,
+        holdId: reservedCoins > 0 ? holdRef.id : null,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         expiresAt,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
         lastMessagePreview: questionText.slice(0, 120),
+        scheduledStart,
+        scheduledEnd,
         ...(fileMeta ? { fileMeta } : {}),
       });
 
@@ -174,15 +265,18 @@ exports.createCommunicationRequest = onCall(
         });
       }
 
-      // Notification to author
+      if (offerId) {
+        tx.update(db.doc(`communicationOffers/${offerId}`), { status: 'booked' });
+      }
+
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: authorId,
         channel: "user",
         kind: "request_created",
         requestId: requestRef.id,
-        title: "Новий запит",
-        body: type === "file" ? "Надійшов запит: питання + файл." : "Надійшов запит: питання."
+        title: "Нове замовлення",
+        body: productId ? "Придбано товар у вашому магазині." : "Надійшов запит на комунікацію."
       }));
     });
 
@@ -208,20 +302,50 @@ exports.acceptCommunicationRequest = onCall(
       if (req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_AUTHOR");
       if (req.status !== "pending") throw new HttpsError("failed-precondition", "NOT_PENDING");
 
-      tx.update(reqRef, {
+      const updates = {
         status: "accepted",
         acceptedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+      };
 
-      // Notification to initiator
+      if (req.type === 'product' && req.productId) {
+        const prodSnap = await tx.get(db.doc(`products/${req.productId}`));
+        if (prodSnap.exists) {
+          const prod = prodSnap.data();
+          
+          tx.set(reqRef.collection("messages").doc(), {
+            senderId: uid,
+            kind: "answer",
+            text: prod.deliveryText || "Дякуємо за покупку!",
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          if (prod.deliveryImageUrl) {
+            tx.set(reqRef.collection("messages").doc(), {
+              senderId: uid,
+              kind: "answer",
+              text: "Delivery Content Image",
+              fileMeta: { mime: 'image/jpeg', storagePath: prod.deliveryImageUrl, size: 0 },
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
+          updates.status = "answered";
+          updates.answeredAt = admin.firestore.FieldValue.serverTimestamp();
+          updates.lastMessageAt = admin.firestore.FieldValue.serverTimestamp();
+          updates.lastMessagePreview = "Товар доставлено!";
+        }
+      }
+
+      tx.update(reqRef, updates);
+
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.initiatorId,
         channel: "user",
         kind: "request_accepted",
         requestId,
-        title: "Запит прийнято",
-        body: "Професіонал прийняв ваш запит і готує відповідь."
+        title: "Замовлення прийнято",
+        body: req.type === 'product' ? "Товар готовий до отримання!" : "Ваш запит прийнято."
       }));
     });
 
@@ -235,7 +359,7 @@ exports.postAnswer = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const requestId = assertNonEmptyString(request.data?.requestId, "requestId");
-    const answerText = assertNonEmptyString(request.data?.answerText, "answerText", 1000);
+    const answerText = assertNonEmptyString(request.data?.answerText, "answerText", 2000);
 
     const db = admin.firestore();
     const reqRef = db.doc(`communicationRequests/${requestId}`);
@@ -262,7 +386,6 @@ exports.postAnswer = onCall(
         lastMessagePreview: answerText.slice(0, 120),
       });
 
-      // Notification to initiator
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.initiatorId,
@@ -270,7 +393,7 @@ exports.postAnswer = onCall(
         kind: "request_answered",
         requestId,
         title: "Є відповідь",
-        body: "Професіонал надіслав відповідь. Перегляньте та підтвердіть оплату."
+        body: "Ви отримали відповідь на ваш запит."
       }));
     });
 
@@ -294,56 +417,59 @@ exports.confirmReceiptAndCapture = onCall(
       const req = reqSnap.data();
 
       if (req.initiatorId !== uid) throw new HttpsError("permission-denied", "NOT_INITIATOR");
-      if (req.status !== "answered") throw new HttpsError("failed-precondition", "NOT_ANSWERED");
-
-      const holdRef = db.doc(`walletHolds/${req.holdId}`);
-      const holdSnap = await tx.get(holdRef);
-      if (!holdSnap.exists || holdSnap.data().status !== "held") throw new HttpsError("failed-precondition", "HOLD_INVALID");
-
-      const payerRef = db.doc(`users/${req.payerId}`);
-      const payeeRef = db.doc(`users/${req.payeeId}`);
-      const [payerSnap, payeeSnap] = await Promise.all([tx.get(payerRef), tx.get(payeeRef)]);
+      if (req.status !== "answered" && req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_READY_FOR_CAPTURE");
 
       const amount = Number(req.reservedCoins || 0);
-      const payerHeld = Number(payerSnap.data().held || 0);
-      const payerBalance = Number(payerSnap.data().balance || 0);
+      
+      if (amount > 0) {
+        const holdRef = db.doc(`walletHolds/${req.holdId}`);
+        const holdSnap = await tx.get(holdRef);
+        if (!holdSnap.exists || holdSnap.data().status !== "held") throw new HttpsError("failed-precondition", "HOLD_INVALID");
 
-      if (payerHeld < amount || payerBalance < amount) throw new HttpsError("failed-precondition", "INSUFFICIENT_FUNDS_AT_CAPTURE");
+        const payerRef = db.doc(`users/${req.payerId}`);
+        const payeeRef = db.doc(`users/${req.payeeId}`);
+        const [payerSnap, payeeSnap] = await Promise.all([tx.get(payerRef), tx.get(payeeRef)]);
 
-      applyCoinTransferTx(tx, {
-        db, fromUid: req.payerId, toUid: req.payeeId,
-        amount, callId: requestId, kind: "qa_capture",
-        metadata: { offerId: req.offerId, type: req.type },
-      });
+        const payerHeld = Number(payerSnap.data().held || 0);
+        const payerBalance = Number(payerSnap.data().balance || 0);
 
-      tx.update(payerRef, {
-        held: payerHeld - amount,
-        balance: payerBalance - amount,
-        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        if (payerHeld < amount || payerBalance < amount) throw new HttpsError("failed-precondition", "INSUFFICIENT_FUNDS_AT_CAPTURE");
 
-      tx.update(payeeRef, {
-        balance: Number(payeeSnap.data().balance || 0) + amount,
-        balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
+        applyCoinTransferTx(tx, {
+          db, fromUid: req.payerId, toUid: req.payeeId,
+          amount, callId: requestId, kind: "purchase_capture",
+          metadata: { offerId: req.offerId, productId: req.productId, type: req.type },
+        });
 
-      tx.update(holdRef, { status: "captured", capturedAt: admin.firestore.FieldValue.serverTimestamp() });
+        tx.update(payerRef, {
+          held: payerHeld - amount,
+          balance: payerBalance - amount,
+          balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        tx.update(payeeRef, {
+          balance: Number(payeeSnap.data().balance || 0) + amount,
+          balanceUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        tx.update(holdRef, { status: "captured", capturedAt: admin.firestore.FieldValue.serverTimestamp() });
+      }
+
       tx.update(reqRef, { status: "completed", completedAt: admin.firestore.FieldValue.serverTimestamp(), lastMessageAt: admin.firestore.FieldValue.serverTimestamp() });
       
       tx.set(reqRef.collection("messages").doc(), {
-        senderId: "system", kind: "system", text: `Payment captured: ${amount} COIN`,
+        senderId: "system", kind: "system", text: amount > 0 ? `Payment captured: ${amount} COIN` : "Purchase completed",
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // Notification to author
       const nRef = db.collection("notifications").doc();
       tx.set(nRef, buildNotification({
         uid: req.authorId,
         channel: "user",
         kind: "request_completed",
         requestId,
-        title: "Оплата підтверджена",
-        body: `Замовник підтвердив отримання. Нараховано ${amount} COIN.`
+        title: "Оплата отримана",
+        body: amount > 0 ? `Кошти (${amount} COIN) зараховано на баланс.` : "Замовлення завершено."
       }));
     });
 
@@ -369,17 +495,18 @@ exports.declineCommunicationRequest = onCall(
       if (req.initiatorId !== uid && req.authorId !== uid) throw new HttpsError("permission-denied", "NOT_PARTICIPANT");
       if (req.status !== "pending" && req.status !== "accepted") throw new HttpsError("failed-precondition", "NOT_CANCELLABLE");
 
-      const holdRef = db.doc(`walletHolds/${req.holdId}`);
-      const holdSnap = await tx.get(holdRef);
-      if (holdSnap.exists && holdSnap.data().status === "held") {
-        const payerRef = db.doc(`users/${req.payerId}`);
-        const payerSnap = await tx.get(payerRef);
-        if (payerSnap.exists) {
-          const payerHeld = Number(payerSnap.data().held || 0);
-          const amount = Number(req.reservedCoins || 0);
-          tx.update(payerRef, { held: Math.max(0, payerHeld - amount) });
+      if (req.reservedCoins > 0 && req.holdId) {
+        const holdRef = db.doc(`walletHolds/${req.holdId}`);
+        const holdSnap = await tx.get(holdRef);
+        if (holdSnap.exists && holdSnap.data().status === "held") {
+          const payerRef = db.doc(`users/${req.payerId}`);
+          const payerSnap = await tx.get(payerRef);
+          if (payerSnap.exists) {
+            const payerHeld = Number(payerSnap.data().held || 0);
+            tx.update(payerRef, { held: Math.max(0, payerHeld - req.reservedCoins) });
+          }
+          tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
-        tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
       }
 
       tx.update(reqRef, {
@@ -387,8 +514,12 @@ exports.declineCommunicationRequest = onCall(
         declineReason: reason, lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
+      if (req.offerId) {
+        tx.update(db.doc(`communicationOffers/${req.offerId}`), { status: 'active' });
+      }
+
       tx.set(reqRef.collection("messages").doc(), {
-        senderId: "system", kind: "system", text: `Request declined: ${reason}`,
+        senderId: "system", kind: "system", text: `Cancelled: ${reason}`,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -399,31 +530,11 @@ exports.declineCommunicationRequest = onCall(
         channel: "user",
         kind: "request_declined",
         requestId,
-        title: "Запит відхилено",
-        body: "Запит було відхилено іншою стороною. Резерв знято."
+        title: "Скасовано",
+        body: "Замовлення було скасовано."
       }));
     });
 
-    return { ok: true };
-  }
-);
-
-// --- NOTIFICATION: MARK READ ---
-exports.markNotificationRead = onCall(
-  { region: "us-central1" },
-  async (request) => {
-    const uid = requireAuth(request);
-    const notificationId = assertNonEmptyString(request.data?.notificationId, "notificationId");
-    const db = admin.firestore();
-    const nRef = db.doc(`notifications/${notificationId}`);
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(nRef);
-      if (!snap.exists) return;
-      if (snap.data().uid !== uid) throw new HttpsError("permission-denied", "NOT_YOUR_NOTIFICATION");
-      if (snap.data().readAt) return;
-      tx.update(nRef, { readAt: admin.firestore.FieldValue.serverTimestamp() });
-    });
     return { ok: true };
   }
 );
@@ -441,80 +552,243 @@ exports.expireCommunicationRequests = onSchedule(
     for (const docSnap of snap.docs) {
       const req = docSnap.data();
       await db.runTransaction(async (tx) => {
-        const holdRef = db.doc(`walletHolds/${req.holdId}`);
-        const holdSnap = await tx.get(holdRef);
-        if (holdSnap.exists && holdSnap.data().status === "held") {
-          const payerRef = db.doc(`users/${req.payerId}`);
-          const payerSnap = await tx.get(payerRef);
-          if (payerSnap.exists) {
-            const held = Number(payerSnap.data().held || 0);
-            const amount = Number(req.reservedCoins || 0);
-            tx.update(payerRef, { held: Math.max(0, held - amount) });
+        if (req.reservedCoins > 0 && req.holdId) {
+          const holdRef = db.doc(`walletHolds/${req.holdId}`);
+          const holdSnap = await tx.get(holdRef);
+          if (holdSnap.exists && holdSnap.data().status === "held") {
+            const payerRef = db.doc(`users/${req.payerId}`);
+            const payerSnap = await tx.get(payerRef);
+            if (payerSnap.exists) {
+              const held = Number(payerSnap.data().held || 0);
+              tx.update(payerRef, { held: Math.max(0, held - req.reservedCoins) });
+            }
+            tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
           }
-          tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
         }
         tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
-        
-        const n1 = db.collection("notifications").doc();
-        tx.set(n1, buildNotification({
-          uid: req.payerId,
-          channel: "user",
-          kind: "request_expired",
-          requestId: docSnap.id,
-          title: "Запит прострочено",
-          body: "Минуло 24 години. Резерв знято."
-        }));
+        if (req.offerId) {
+          tx.update(db.doc(`communicationOffers/${req.offerId}`), { status: 'active' });
+        }
       });
     }
   }
 );
 
+exports.cleanupExpiredOffers = onSchedule(
+  { region: "us-central1", schedule: "every 1 hours" },
+  async () => {
+    const db = admin.firestore();
+    const now = tsNow();
+    const snap = await db.collection("communicationOffers")
+      .where("schedulingType", "==", "scheduled")
+      .where("status", "==", "active")
+      .where("scheduledEnd", "<", now)
+      .limit(100).get();
+
+    const batch = db.batch();
+    snap.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    logger.info(`Cleaned up ${snap.docs.length} expired offers.`);
+  }
+);
+
+exports.sendCallReminders = onSchedule(
+  { region: "us-central1", schedule: "every 5 minutes" },
+  async () => {
+    const db = admin.firestore();
+    const now = Date.now();
+    const reminderWindow = now + 10 * 60000;
+    
+    const snap = await db.collection("communicationRequests")
+      .where("status", "==", "accepted")
+      .where("type", "==", "video")
+      .where("scheduledStart", ">=", admin.firestore.Timestamp.fromMillis(now))
+      .where("scheduledStart", "<=", admin.firestore.Timestamp.fromMillis(reminderWindow))
+      .limit(50).get();
+
+    for (const docSnap of snap.docs) {
+      const req = docSnap.data();
+      const requestId = docSnap.id;
+      
+      const alreadySent = await db.collection("notifications")
+        .where("requestId", "==", requestId)
+        .where("kind", "==", "call_reminder")
+        .limit(1).get();
+
+      if (alreadySent.empty) {
+        const participants = [req.initiatorId, req.authorId];
+        for (const uid of participants) {
+          await db.collection("notifications").add(buildNotification({
+            uid, channel: "user", kind: "call_reminder", requestId,
+            title: "Нагадування про дзвінок",
+            body: "Ваш запланований відеочат розпочнеться за декілька хвилин. Будьте готові!"
+          }));
+        }
+      }
+    }
+  }
+);
+
 // --- VIDEO CALLS ---
+exports.createDailyRoom = onCall(
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
+  async (request) => {
+    requireAuth(request);
+    const room = await fetchDaily("rooms", "POST", {
+      properties: {
+        exp: Math.round(Date.now() / 1000) + 3600,
+        enable_chat: true,
+      }
+    });
+    return { roomUrl: room.url, name: room.name };
+  }
+);
+
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
-    const callerId = requireAuth(request);
-    const receiverId = request.data?.receiverId;
-    const offerId = request.data?.offerId;
-    if (!receiverId || !offerId) throw new HttpsError("invalid-argument", "Missing data");
+    try {
+      const callerId = requireAuth(request);
+      const receiverId = request.data?.receiverId;
+      const offerId = request.data?.offerId;
 
-    const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
-    if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
-    const offer = offerSnap.data();
+      // HARD LOGGING
+      logger.info("startCall input", {
+        uid: request.auth?.uid || null,
+        receiverId: request.data?.receiverId || null,
+        offerId: request.data?.offerId || null,
+      });
 
-    const pricingSnapshot = {
-      type: offer.type,
-      currency: COIN_CURRENCY,
-      ratePerMinute: offer.pricing.ratePerMinute || null,
-    };
+      if (!receiverId || !offerId) {
+        logger.error("startCall missing data", { receiverId, offerId });
+        throw new HttpsError("invalid-argument", "Missing data");
+      }
 
-    const callRef = admin.firestore().collection("calls").doc();
-    const nowTs = tsNow();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
+      const offerRef = admin.firestore().doc(`communicationOffers/${offerId}`);
+      const offerSnap = await offerRef.get();
 
-    const callData = {
-      status: "ringing", callerId, receiverId, callerName: request.auth.token.name || "Anonymous",
-      createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
+      // HARD LOGGING
+      logger.info("startCall offer lookup", {
+        offerId,
+        exists: offerSnap.exists,
+      });
 
-    if (offer.type === "video") {
-      callData.roomUrl = `https://api.daily.co/v1/rooms/call-${callRef.id}`;
-      callData.token = "demo-token-" + callRef.id;
+      if (!offerSnap.exists) {
+        logger.error("startCall OFFER_NOT_FOUND", { offerId });
+        throw new HttpsError("not-found", "OFFER_NOT_FOUND");
+      }
+
+      const offer = offerSnap.data();
+
+      // HARD LOGGING
+      logger.info("startCall offer data", {
+        ownerId: offer?.ownerId || null,
+        type: offer?.type || null,
+        pricing: offer?.pricing || null,
+        status: offer?.status || null,
+      });
+
+      if (!offer?.pricing) {
+        logger.error("startCall pricing missing", { offerId, offer });
+        throw new HttpsError("failed-precondition", "OFFER_PRICING_MISSING");
+      }
+
+      // Check availability / scheduling
+      if (offer.schedulingType === 'instant') {
+        const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+        if (receiverSnap.exists) {
+          const receiver = receiverSnap.data();
+          const isOnline = receiver.availability?.status === 'online';
+          const until = receiver.availability?.until;
+          const expired = until && (until.toMillis?.() < Date.now());
+          if (!isOnline || expired) {
+            logger.warn("startCall receiver offline", { receiverId });
+            throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
+          }
+        }
+      } else if (offer.schedulingType === 'scheduled' && offer.scheduledStart && offer.scheduledEnd) {
+        const now = Date.now();
+        const start = (offer.scheduledStart?.toMillis?.() || 0) - 5 * 60000;
+        const end = offer.scheduledEnd?.toMillis?.() || 0;
+        if (now < start || now > end) {
+          logger.warn("startCall NOT_CALL_TIME", { now, start, end });
+          throw new HttpsError("failed-precondition", "CALL_NOT_IN_TIME_WINDOW");
+        }
+      }
+
+      const pricingSnapshot = {
+        type: offer.type,
+        currency: COIN_CURRENCY,
+        ratePerMinute: offer.pricing.ratePerMinute || null,
+        ratePerSession: offer.pricing.ratePerSession || null,
+      };
+
+      logger.info("startCall pricingSnapshot", { pricingSnapshot });
+
+      // 1. Create real Daily room
+      const roomName = `call-${Date.now()}-${offerId.slice(0,5)}`;
+      const room = await fetchDaily("rooms", "POST", {
+        name: roomName,
+        properties: {
+          exp: Math.round(Date.now() / 1000) + 3600,
+        }
+      });
+
+      // 2. Create token for caller
+      const tokenData = await fetchDaily("meeting-tokens", "POST", {
+        properties: {
+          room_name: roomName,
+          user_name: request.auth.token.name || "Caller",
+          is_owner: true
+        }
+      });
+
+      const callRef = admin.firestore().collection("calls").doc();
+      const nowTs = tsNow();
+      const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
+
+      const callData = {
+        status: "ringing", callerId, receiverId, callerName: request.auth.token.name || "Anonymous",
+        createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
+        durationMinutes: offer.durationMinutes || null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        roomUrl: room.url,
+        roomName: roomName,
+        token: tokenData.token
+      };
+
+      logger.info("startCall callData ready", {
+        callId: callRef.id,
+        type: callData.type,
+        receiverId: callData.receiverId,
+      });
+
+      await callRef.set(callData);
+
+      logger.info("startCall success", { callId: callRef.id, offerId, receiverId });
+
+      return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
+    } catch (error) {
+      // HARD LOGGING
+      logger.error("startCall failed", { message: error?.message, stack: error?.stack, error });
+      throw error;
     }
-
-    await callRef.set(callData);
-    return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
   }
 );
 
 exports.acceptCall = onCall(
-  { region: "us-central1" },
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
     const uid = requireAuth(request);
     const callId = request.data?.callId;
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
+
+    let roomUrl = "";
+    let roomName = "";
+    let token = "";
 
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(callRef);
@@ -523,7 +797,12 @@ exports.acceptCall = onCall(
       if (call.receiverId !== uid) throw new HttpsError("permission-denied", "Not yours");
       if (call.status !== "ringing") throw new HttpsError("failed-precondition", "Not ringing");
 
-      const rate = call.pricingSnapshot.ratePerMinute;
+      roomUrl = call.roomUrl || "";
+      roomName = call.roomName || "";
+
+      const rate = call.pricingSnapshot.ratePerMinute || call.pricingSnapshot.ratePerSession;
+      if (!rate) throw new HttpsError("failed-precondition", "NO_RATE_DEFINED");
+
       const callerRef = db.doc(`users/${call.callerId}`);
       const receiverRef = db.doc(`users/${call.receiverId}`);
       const [callerSnap, receiverSnap] = await Promise.all([tx.get(callerRef), tx.get(receiverRef)]);
@@ -534,10 +813,27 @@ exports.acceptCall = onCall(
 
       tx.update(callerRef, { balance: callerSnap.data().balance - rate });
       tx.update(receiverRef, { balance: receiverSnap.data().balance + rate });
-      tx.update(callRef, { status: "accepted", acceptedAtTs: tsNow(), billedMinutes: 1, billedCoins: rate });
+      
+      const billedMinutes = call.pricingSnapshot.ratePerSession ? (call.durationMinutes || 30) : 1;
+      
+      tx.update(callRef, { 
+        status: "accepted", 
+        acceptedAtTs: tsNow(), 
+        billedMinutes: billedMinutes, 
+        billedCoins: rate 
+      });
     });
 
-    return { ok: true };
+    const tokenData = await fetchDaily("meeting-tokens", "POST", {
+      properties: {
+        room_name: roomName,
+        user_name: request.auth.token.name || "Receiver",
+        is_owner: false
+      }
+    });
+    token = tokenData.token;
+
+    return { ok: true, roomUrl, token };
   }
 );
 
@@ -556,8 +852,8 @@ exports.endCall = onCall(
 
       const updates = { status: "ended", endReason: reason || "ended_by_user", endedAtTs: tsNow() };
 
-      if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs) {
-        const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
+      if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs && !call.pricingSnapshot.ratePerSession) {
+        const elapsedSec = Math.floor((Date.now() - (call.acceptedAtTs?.toMillis?.() || Date.now())) / 1000);
         const totalMin = ceilMinutesByRule(elapsedSec);
         const dueMin = totalMin - call.billedMinutes;
         if (dueMin > 0) {
@@ -580,8 +876,8 @@ exports.billingTickAcceptedCalls = onSchedule(
     const snap = await db.collection("calls").where("status", "==", "accepted").limit(50).get();
     for (const docSnap of snap.docs) {
       const call = docSnap.data();
-      if (call.type !== "video" || !call.acceptedAtTs) continue;
-      const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
+      if (call.type !== "video" || !call.acceptedAtTs || call.pricingSnapshot.ratePerSession) continue;
+      const elapsedSec = Math.floor((Date.now() - (call.acceptedAtTs?.toMillis?.() || Date.now())) / 1000);
       const currentFullMin = Math.floor(elapsedSec / 60);
       const dueMin = currentFullMin - call.billedMinutes + 1;
       if (dueMin > 0) {
@@ -599,16 +895,5 @@ exports.billingTickAcceptedCalls = onSchedule(
         });
       }
     }
-  }
-);
-
-exports.cleanupMissedCalls = onSchedule(
-  { region: "us-central1", schedule: "every 5 minutes" },
-  async () => {
-    const db = admin.firestore();
-    const snap = await db.collection("calls").where("status", "==", "ringing").where("expiresAt", "<=", tsNow()).limit(100).get();
-    const batch = db.batch();
-    snap.docs.forEach(d => batch.update(d.ref, { status: "ended", endReason: "expired" }));
-    await batch.commit();
   }
 );

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';
@@ -27,8 +28,8 @@ import { Phone, PhoneOff, Loader2 } from 'lucide-react';
 
 type AcceptCallResult = {
   roomUrl: string;
-  roomName: string;
   token: string;
+  ok?: boolean;
 };
 
 type EndCallResult = { ok: true };
@@ -51,12 +52,12 @@ export function CallManager() {
   const callerCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(collection(firestore, 'calls'), where('callerId', '==', user.uid));
-  }, [user, firestore]);
+  }, [user?.uid, firestore]);
 
   const receiverCallsQuery = useMemoFirebase(() => {
     if (!user) return null;
     return query(collection(firestore, 'calls'), where('receiverId', '==', user.uid));
-  }, [user, firestore]);
+  }, [user?.uid, firestore]);
 
   const { data: callerCalls } = useCollection<Call>(callerCallsQuery);
   const { data: receiverCalls } = useCollection<Call>(receiverCallsQuery);
@@ -125,6 +126,8 @@ export function CallManager() {
         sessionStorage.setItem(`dailyToken:${callId}`, res.data.token);
         sessionStorage.setItem(`dailyRoomUrl:${callId}`, res.data.roomUrl);
         router.push(`/call/${callId}`);
+      } else {
+        throw new Error('Missing call credentials in response');
       }
     } catch (e: any) {
       pushToast({
@@ -177,7 +180,7 @@ export function CallManager() {
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4 py-4">
               <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted p-2 rounded">
-                Offer ID: {incomingCall.offerId?.slice(0, 8)}...
+                ID: {incomingCall.id.slice(0, 8)}...
               </div>
             </CardContent>
             <CardFooter className="flex gap-3 pt-2">

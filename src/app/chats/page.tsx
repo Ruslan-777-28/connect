@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState } from 'react';
@@ -27,7 +26,7 @@ export default function ChatsPage() {
       where('status', '==', 'completed'),
       orderBy('completedAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   // Query for finished chats as professional (author)
@@ -38,7 +37,7 @@ export default function ChatsPage() {
       where('status', '==', 'completed'),
       orderBy('completedAt', 'desc')
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
 
   const { data: customerChats, isLoading: loadingCustomer } = useCollection<CommunicationRequest>(customerQuery);

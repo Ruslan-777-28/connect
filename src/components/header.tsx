@@ -1,4 +1,3 @@
-
 'use client';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { Menu, MessageSquare, Bell } from 'lucide-react';
@@ -27,7 +26,7 @@ export function Header() {
       where('readAt', '==', null),
       limit(1)
     ) : null),
-    [user, firestore]
+    [user?.uid, firestore]
   );
   const { data: unreadNotifs } = useCollection(unreadQuery);
   const hasUnread = unreadNotifs && unreadNotifs.length > 0;

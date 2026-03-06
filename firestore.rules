@@ -21,6 +21,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ---------- Products ----------
+    match /products/{productId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
     // ---------- Notifications ----------
     match /notifications/{notificationId} {
       allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
@@ -65,6 +72,37 @@ service cloud.firestore {
         );
         allow create, update, delete: if false;
       }
+    }
+
+    // ---------- Posts ----------
+    match /posts/{postId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.authorId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+        allow update: if false;
+        allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      }
+    }
+
+    // ---------- Favorites ----------
+    match /favorites/{favoriteId} {
+      allow read: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+
+    // ---------- Likes ----------
+    match /likes/{likeId} {
+      allow read: if isSignedIn();
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if false;
     }
 
     match /calls/{callId} {

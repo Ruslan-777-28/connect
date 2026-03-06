@@ -1,4 +1,3 @@
-
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -30,6 +29,10 @@ export async function endCallClient(
   }
 }
 
+/**
+ * ЦЕЙ ФУНКЦІОНАЛ ПЕРЕДАЄ ДАНІ НА СЕРВЕР:
+ * Тут receiverId та offerId потрапляють у httpsCallable('startCall')
+ */
 export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string,
@@ -43,6 +46,7 @@ export async function startVideoCall(
       'startCall'
     );
 
+    // ВІДПРАВКА ДАНИХ
     const res = await startCall({ receiverId, offerId });
     const data = res.data;
 
@@ -52,17 +56,21 @@ export async function startVideoCall(
 
     const { callId, roomUrl, token } = data;
 
+    // Зберігаємо ключі доступу в сесію для сторінки виклику
     sessionStorage.setItem(`dailyToken:${callId}`, token);
     sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 
     return { callId };
   } catch (error: any) {
-    // Standardize error codes based on server responses
+    console.error("Start call error details:", error);
     if (error?.code === 'not-found' && error?.message === 'OFFER_NOT_FOUND') {
       throw new Error('OFFER_NOT_FOUND');
     }
     if (error?.code === 'failed-precondition' && error?.message === 'INSUFFICIENT_BALANCE') {
       throw new Error('INSUFFICIENT_BALANCE');
+    }
+    if (error?.code === 'failed-precondition' && error?.message === 'DAILY_API_KEY_NOT_CONFIGURED') {
+      throw new Error('Система відеочатів не налаштована (відсутній API ключ).');
     }
     
     throw error;

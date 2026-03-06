@@ -38,9 +38,10 @@ export type CommunicationRequest = {
   authorId: string;
   payerId: string;
   payeeId: string;
-  type: 'video' | 'text' | 'file';
+  type: 'video' | 'text' | 'file' | 'product';
   status: 'pending' | 'accepted' | 'answered' | 'completed' | 'declined' | 'expired' | 'ringing';
-  offerId: string;
+  offerId?: string;
+  productId?: string;
   pricingSnapshot: any;
   reservedCoins: number;
   holdId: string;
@@ -51,6 +52,23 @@ export type CommunicationRequest = {
   lastMessageAt: Timestamp | any;
   lastMessagePreview?: string;
   fileMeta?: any;
+  // Scheduled call specific fields
+  scheduledStart?: Timestamp | any;
+  scheduledEnd?: Timestamp | any;
+};
+
+export type DigitalProduct = {
+  id: string;
+  authorId: string;
+  categoryId: string;
+  subcategoryId: string;
+  title: string;
+  description: string;
+  imageUrl?: string;
+  deliveryImageUrl?: string;
+  deliveryText: string;
+  price: number;
+  createdAt: Timestamp | any;
 };
 
 export type Notification = {
@@ -95,17 +113,24 @@ export type Pricing = {
   ratePerMinute?: number;
   ratePerFile?: number;
   ratePerQuestion?: number;
+  ratePerSession?: number;
   currency: string;
 };
+
+export type SchedulingType = 'instant' | 'scheduled';
 
 export type CommunicationOffer = {
   id: string;
   ownerId: string;
   type: 'video' | 'file' | 'text';
+  schedulingType: SchedulingType;
+  scheduledStart?: Timestamp | any;
+  scheduledEnd?: Timestamp | any;
+  durationMinutes?: number;
   categoryId: string;
   subcategoryId: string;
   pricing: Pricing;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'booked';
   createdAt: Timestamp | any;
   updatedAt: Timestamp | any;
 };
@@ -118,4 +143,42 @@ export type Call = CommunicationRequest & {
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
   caller?: UserProfile;
+};
+
+export type Post = {
+  id: string;
+  authorId: string;
+  title: string;
+  content: string;
+  imageUrl?: string;
+  viewCount: number;
+  createdAt: Timestamp | any;
+  updatedAt?: Timestamp | any;
+};
+
+export type Comment = {
+  id: string;
+  uid: string;
+  text: string;
+  createdAt: Timestamp | any;
+};
+
+export type FavoriteType = 'user' | 'post' | 'product';
+
+export type Favorite = {
+  id: string;
+  uid: string;
+  targetId: string;
+  type: FavoriteType;
+  createdAt: Timestamp | any;
+};
+
+export type LikeType = 'post' | 'product';
+
+export type Like = {
+  id: string;
+  uid: string;
+  targetId: string;
+  type: LikeType;
+  createdAt: Timestamp | any;
 };

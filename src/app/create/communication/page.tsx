@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { collection, serverTimestamp, doc, getDoc } from 'firebase/firestore';
+import { collection, serverTimestamp, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { useFirestore, useUser, addDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,9 +15,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Trash2 } from 'lucide-react';
-import type { CommunicationOffer } from '@/lib/types';
+import { Loader2, ArrowLeft, Trash2, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import type { CommunicationOffer, SchedulingType } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 const categories = [
   { 
@@ -49,6 +51,11 @@ export default function CreateCommunicationOfferPage() {
   const typeParam = params.get('type') as 'video' | 'file' | 'text' | null;
 
   const [type, setType] = useState<'video' | 'file' | 'text'>(typeParam ?? 'video');
+  const [schedulingType, setSchedulingType] = useState<SchedulingType>('instant');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
+  const [duration, setDuration] = useState('30');
+  
   const [categoryId, setCategoryId] = useState(categories[0].id);
   const [subcategoryId, setSubcategoryId] = useState('');
   const [price, setPrice] = useState('');
@@ -77,11 +84,23 @@ export default function CreateCommunicationOfferPage() {
           setType(data.type);
           setCategoryId(data.categoryId);
           setSubcategoryId(data.subcategoryId);
+          setSchedulingType(data.schedulingType || 'instant');
+          
+          if (data.schedulingType === 'scheduled' && data.scheduledStart) {
+            const start = data.scheduledStart.toDate();
+            setScheduledDate(start.toISOString().split('T')[0]);
+            setScheduledTime(start.toTimeString().slice(0, 5));
+            setDuration(String(data.durationMinutes || 30));
+          }
           
           let p = '';
-          if (data.type === 'video') p = String(data.pricing.ratePerMinute || '');
-          if (data.type === 'file') p = String(data.pricing.ratePerFile || '');
-          if (data.type === 'text') p = String(data.pricing.ratePerQuestion || '');
+          if (data.type === 'video') {
+            p = String(data.schedulingType === 'scheduled' ? data.pricing.ratePerSession : data.pricing.ratePerMinute || '');
+          } else if (data.type === 'file') {
+            p = String(data.pricing.ratePerFile || '');
+          } else if (data.type === 'text') {
+            p = String(data.pricing.ratePerQuestion || '');
+          }
           setPrice(p);
         }
       } catch (e) {
@@ -94,13 +113,13 @@ export default function CreateCommunicationOfferPage() {
   }, [editId, firestore]);
 
   const priceLabel = useMemo(() => {
-    switch(type) {
-      case 'video': return 'Вартість 1 хвилини (COIN)';
-      case 'file': return 'Вартість 1 файлу (COIN)';
-      case 'text': return 'Вартість 1 питання (COIN)';
-      default: return 'Вартість (COIN)';
+    if (type === 'video') {
+      return schedulingType === 'scheduled' ? 'Вартість сеансу (COIN)' : 'Вартість 1 хвилини (COIN)';
     }
-  }, [type]);
+    if (type === 'file') return 'Вартість 1 файлу (COIN)';
+    if (type === 'text') return 'Вартість 1 питання (COIN)';
+    return 'Вартість (COIN)';
+  }, [type, schedulingType]);
 
   async function onSubmit() {
     if (!user) {
@@ -117,13 +136,36 @@ export default function CreateCommunicationOfferPage() {
     setIsSaving(true);
     
     const pricing: any = { currency: 'COIN' };
-    if (type === 'video') pricing.ratePerMinute = priceNum;
-    if (type === 'file') pricing.ratePerFile = priceNum;
-    if (type === 'text') pricing.ratePerQuestion = priceNum;
+    let scheduledStart = null;
+    let scheduledEnd = null;
+
+    if (type === 'video') {
+      if (schedulingType === 'scheduled') {
+        pricing.ratePerSession = priceNum;
+        const start = new Date(`${scheduledDate}T${scheduledTime}`);
+        if (isNaN(start.getTime())) {
+          toast({ variant: 'destructive', title: 'Помилка', description: 'Вкажіть коректну дату та час.' });
+          setIsSaving(false);
+          return;
+        }
+        scheduledStart = Timestamp.fromDate(start);
+        scheduledEnd = Timestamp.fromDate(new Date(start.getTime() + Number(duration) * 60000));
+      } else {
+        pricing.ratePerMinute = priceNum;
+      }
+    } else if (type === 'file') {
+      pricing.ratePerFile = priceNum;
+    } else if (type === 'text') {
+      pricing.ratePerQuestion = priceNum;
+    }
 
     const offerData = {
       ownerId: user.uid,
       type,
+      schedulingType: type === 'video' ? schedulingType : 'instant',
+      scheduledStart,
+      scheduledEnd,
+      durationMinutes: type === 'video' && schedulingType === 'scheduled' ? Number(duration) : null,
       categoryId,
       subcategoryId,
       pricing,
@@ -200,10 +242,59 @@ export default function CreateCommunicationOfferPage() {
       </div>
 
       <h1 className="mb-8 text-2xl font-bold capitalize">
-        {editId ? 'Редагування' : 'Налаштування'}: {type}
+        {editId ? 'Редагування' : 'Налаштування'}: {type === 'video' ? 'Відеочат' : type === 'file' ? 'Файл' : 'Питання'}
       </h1>
 
       <div className="space-y-6">
+        {type === 'video' && (
+          <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/20">
+            <div className="space-y-0.5">
+              <Label className="text-base">Тип сеансу</Label>
+              <p className="text-sm text-muted-foreground">
+                {schedulingType === 'instant' ? 'Онлайн зараз (тарифікація за хв)' : 'За розкладом (фіксована ціна)'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={cn("text-xs font-bold", schedulingType === 'instant' ? "text-primary" : "text-muted-foreground")}>ONLINE</span>
+              <Switch 
+                checked={schedulingType === 'scheduled'}
+                onCheckedChange={(checked) => setSchedulingType(checked ? 'scheduled' : 'instant')}
+              />
+              <span className={cn("text-xs font-bold", schedulingType === 'scheduled' ? "text-primary" : "text-muted-foreground")}>SCHEDULED</span>
+            </div>
+          </div>
+        )}
+
+        {type === 'video' && schedulingType === 'scheduled' && (
+          <div className="grid gap-4 p-4 border rounded-lg animate-in fade-in duration-300">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2"><CalendarIcon className="h-3 w-3" /> Дата</Label>
+                <Input type="date" value={scheduledDate} onChange={e => setScheduledDate(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2"><Clock className="h-3 w-3" /> Час початку</Label>
+                <Input type="time" value={scheduledTime} onChange={e => setScheduledTime(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Тривалість (хвилини)</Label>
+              <Select value={duration} onValueChange={setDuration}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15 хвилин</SelectItem>
+                  <SelectItem value="30">30 хвилин</SelectItem>
+                  <SelectItem value="45">45 хвилин</SelectItem>
+                  <SelectItem value="60">1 година</SelectItem>
+                  <SelectItem value="90">1.5 години</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label>Категорія</Label>
           <Select value={categoryId} onValueChange={(val) => {

@@ -30,16 +30,17 @@
     "CommunicationRequest": {
       "title": "CommunicationRequest",
       "type": "object",
-      "description": "Represents a communication request (Video, Q&A or File).",
+      "description": "Represents a communication request (Video, Q&A, File or Product Purchase).",
       "properties": {
         "id": { "type": "string" },
         "initiatorId": { "type": "string" },
         "authorId": { "type": "string" },
         "payerId": { "type": "string" },
         "payeeId": { "type": "string" },
-        "type": { "type": "string", "enum": ["video", "text", "file"] },
+        "type": { "type": "string", "enum": ["video", "text", "file", "product"] },
         "status": { "type": "string", "enum": ["pending", "accepted", "answered", "completed", "declined", "expired", "ringing"] },
         "offerId": { "type": "string" },
+        "productId": { "type": "string" },
         "pricingSnapshot": { "type": "object" },
         "reservedCoins": { "type": "number" },
         "holdId": { "type": "string" },
@@ -49,6 +50,40 @@
         "completedAt": { "type": "string", "format": "date-time" },
         "lastMessageAt": { "type": "string", "format": "date-time" },
         "lastMessagePreview": { "type": "string" }
+      }
+    },
+    "CommunicationOffer": {
+      "title": "CommunicationOffer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "file", "text"] },
+        "schedulingType": { "type": "string", "enum": ["instant", "scheduled"], "default": "instant" },
+        "scheduledStart": { "type": "string", "format": "date-time" },
+        "scheduledEnd": { "type": "string", "format": "date-time" },
+        "durationMinutes": { "type": "number" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "pricing": { "type": "object" },
+        "status": { "type": "string", "enum": ["active", "inactive", "booked"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Product": {
+      "title": "Digital Product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "deliveryText": { "type": "string" },
+        "price": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
       }
     },
     "Message": {
@@ -77,6 +112,62 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "readAt": { "type": "string", "format": "date-time", "nullable": true }
       }
+    },
+    "Post": {
+      "title": "Post",
+      "type": "object",
+      "description": "A blog post or update published by a user.",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "subcategoryId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" },
+        "viewCount": { "type": "number", "default": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "authorId", "title", "content", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "type": "object",
+      "description": "A comment on a post.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "text", "createdAt"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "type": "object",
+      "description": "Represents a user's bookmark/favorite item.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["user", "post", "product"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "targetId", "type", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "type": "object",
+      "description": "Represents a user's like on a post or product.",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "targetId": { "type": "string" },
+        "type": { "type": "string", "enum": ["post", "product"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "uid", "targetId", "type", "createdAt"]
     }
   },
   "auth": {
@@ -93,12 +184,36 @@
         "definition": { "entityName": "CommunicationRequest", "schema": { "$ref": "#/backend/entities/CommunicationRequest" } }
       },
       {
+        "path": "/communicationOffers/{offerId}",
+        "definition": { "entityName": "CommunicationOffer", "schema": { "$ref": "#/backend/entities/CommunicationOffer" } }
+      },
+      {
+        "path": "/products/{productId}",
+        "definition": { "entityName": "Product", "schema": { "$ref": "#/backend/entities/Product" } }
+      },
+      {
         "path": "/communicationRequests/{requestId}/messages/{messageId}",
         "definition": { "entityName": "Message", "schema": { "$ref": "#/backend/entities/Message" } }
       },
       {
         "path": "/notifications/{notificationId}",
         "definition": { "entityName": "Notification", "schema": { "$ref": "#/backend/entities/Notification" } }
+      },
+      {
+        "path": "/posts/{postId}",
+        "definition": { "entityName": "Post", "schema": { "$ref": "#/backend/entities/Post" } }
+      },
+      {
+        "path": "/posts/{postId}/comments/{commentId}",
+        "definition": { "entityName": "Comment", "schema": { "$ref": "#/backend/entities/Comment" } }
+      },
+      {
+        "path": "/favorites/{favoriteId}",
+        "definition": { "entityName": "Favorite", "schema": { "$ref": "#/backend/entities/Favorite" } }
+      },
+      {
+        "path": "/likes/{likeId}",
+        "definition": { "entityName": "Like", "schema": { "$ref": "#/backend/entities/Like" } }
       }
     ]
   }
