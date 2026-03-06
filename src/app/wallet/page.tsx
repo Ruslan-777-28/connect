@@ -99,21 +99,25 @@ export default function WalletPage() {
     }
   };
 
-  /**
-   * ОСЬ ЦЕЙ ФРАГМЕНТ:
-   * Тут ми готуємо дані для виклику startCall.
-   */
   const handleCall = async (request: CommunicationRequest) => {
     if (!user || !request.offerId) return;
     setIsActionLoading(request.id);
+    
+    const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
+
+    console.log("VIDEO CALL PAYLOAD", {
+      item: request,
+      currentUserId: user?.uid,
+      computedReceiverId: receiverId,
+      offerId: request.offerId,
+      authorId: request.authorId,
+      initiatorId: request.initiatorId,
+      type: request.type,
+      status: request.status,
+    });
+
     try {
-      // receiverId — це завжди "інша сторона" відносно поточного користувача
-      const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
-      
-      // Передаємо в бібліотеку startVideoCall (яка всередині викликає Firebase Function 'startCall')
       const { callId } = await startVideoCall(app, receiverId, request.offerId);
-      
-      // Переходимо до кімнати очікування
       router.push(`/call/${callId}`);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Помилка', description: e.message });
