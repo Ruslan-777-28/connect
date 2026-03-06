@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
@@ -100,12 +99,21 @@ export default function WalletPage() {
     }
   };
 
+  /**
+   * ОСЬ ЦЕЙ ФРАГМЕНТ:
+   * Тут ми готуємо дані для виклику startCall.
+   */
   const handleCall = async (request: CommunicationRequest) => {
     if (!user || !request.offerId) return;
     setIsActionLoading(request.id);
     try {
+      // receiverId — це завжди "інша сторона" відносно поточного користувача
       const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
+      
+      // Передаємо в бібліотеку startVideoCall (яка всередині викликає Firebase Function 'startCall')
       const { callId } = await startVideoCall(app, receiverId, request.offerId);
+      
+      // Переходимо до кімнати очікування
       router.push(`/call/${callId}`);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Помилка', description: e.message });
