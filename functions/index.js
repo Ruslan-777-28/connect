@@ -654,7 +654,11 @@ exports.startCall = onCall(
       const receiverId = request.data?.receiverId;
       const offerId = request.data?.offerId;
 
-      logger.info("startCall input", { callerId, receiverId, offerId });
+      logger.info("startCall input", {
+        uid: request.auth?.uid || null,
+        receiverId: request.data?.receiverId || null,
+        offerId: request.data?.offerId || null,
+      });
 
       if (!receiverId || !offerId) {
         logger.error("startCall missing data", { receiverId, offerId });
@@ -664,7 +668,10 @@ exports.startCall = onCall(
       const offerRef = admin.firestore().doc(`communicationOffers/${offerId}`);
       const offerSnap = await offerRef.get();
 
-      logger.info("startCall offer exists", { offerId, exists: offerSnap.exists });
+      logger.info("startCall offer lookup", {
+        offerId,
+        exists: offerSnap.exists,
+      });
 
       if (!offerSnap.exists) {
         logger.error("startCall OFFER_NOT_FOUND", { offerId });
@@ -674,11 +681,10 @@ exports.startCall = onCall(
       const offer = offerSnap.data();
 
       logger.info("startCall offer data", {
-        offerId,
         ownerId: offer?.ownerId || null,
         type: offer?.type || null,
-        hasPricing: !!offer?.pricing,
         pricing: offer?.pricing || null,
+        status: offer?.status || null,
       });
 
       if (!offer?.pricing) {
@@ -762,7 +768,7 @@ exports.startCall = onCall(
 
       return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
     } catch (error) {
-      logger.error("startCall failed", error);
+      logger.error("startCall failed", { message: error?.message, stack: error?.stack, error });
       throw error;
     }
   }
