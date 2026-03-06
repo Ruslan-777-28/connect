@@ -100,25 +100,26 @@ export default function WalletPage() {
     }
   };
 
-  const handleCall = async (request: CommunicationRequest) => {
-    if (!user || !request.offerId) return;
-    setIsActionLoading(request.id);
+  const handleCall = async (item: CommunicationRequest) => {
+    if (!user || !item.offerId) return;
+    setIsActionLoading(item.id);
     
-    const receiverId = (user.uid === request.initiatorId) ? request.authorId : request.initiatorId;
+    // Обчислення receiverId: якщо я ініціатор, то отримувач - автор послуги, і навпаки
+    const receiverId = (user.uid === item.initiatorId) ? item.authorId : item.initiatorId;
 
     console.log("VIDEO CALL PAYLOAD", {
-      item: request,
+      item,
       currentUserId: user?.uid,
       computedReceiverId: receiverId,
-      offerId: request.offerId,
-      authorId: request.authorId,
-      initiatorId: request.initiatorId,
-      type: request.type,
-      status: request.status,
+      offerId: item.offerId,
+      authorId: item.authorId,
+      initiatorId: item.initiatorId,
+      type: item.type,
+      status: item.status,
     });
 
     try {
-      const { callId } = await startVideoCall(app, receiverId, request.offerId);
+      const { callId } = await startVideoCall(app, receiverId, item.offerId);
       router.push(`/call/${callId}`);
     } catch (e: any) {
       toast({ variant: 'destructive', title: 'Помилка', description: e.message });
