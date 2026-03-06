@@ -81,6 +81,30 @@ function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, met
   tx.set(creditRef, { ...entryBase, uid: toUid, type: "payout", amount: Math.abs(amount) });
 }
 
+// --- DAILY.CO UTILS ---
+async function fetchDaily(path, method = 'GET', body = null) {
+  const key = DAILY_API_KEY.value();
+  if (!key || key === 'your-api-key') {
+    throw new HttpsError("failed-precondition", "DAILY_API_KEY_NOT_CONFIGURED");
+  }
+
+  const res = await fetch(`https://api.daily.co/v1/${path}`, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': 'application/json'
+    },
+    body: body ? JSON.stringify(body) : null
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    logger.error("Daily API Error", data);
+    throw new HttpsError("internal", data.info || data.error || "Daily API Error");
+  }
+  return data;
+}
+
 // --- FIRESTORE TRIGGERS ---
 
 exports.onCommentCreated = onDocumentCreated(
@@ -607,6 +631,20 @@ exports.sendCallReminders = onSchedule(
 );
 
 // --- VIDEO CALLS ---
+exports.createDailyRoom = onCall(
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
+  async (request) => {
+    requireAuth(request);
+    const room = await fetchDaily("rooms", "POST", {
+      properties: {
+        exp: Math.round(Date.now() / 1000) + 3600, // 1 hour expiry
+        enable_chat: true,
+      }
+    });
+    return { roomUrl: room.url, name: room.name };
+  }
+);
+
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
@@ -649,6 +687,23 @@ exports.startCall = onCall(
       ratePerSession: offer.pricing.ratePerSession || null,
     };
 
+    // 1. Create real Daily room
+    const room = await fetchDaily("rooms", "POST", {
+      name: `call-${Date.now()}-${offerId.slice(0,5)}`,
+      properties: {
+        exp: Math.round(Date.now() / 1000) + 3600,
+      }
+    });
+
+    // 2. Create token for caller
+    const tokenData = await fetchDaily("meeting-tokens", "POST", {
+      properties: {
+        room_name: room.name,
+        user_name: request.auth.token.name || "Caller",
+        is_owner: true
+      }
+    });
+
     const callRef = admin.firestore().collection("calls").doc();
     const nowTs = tsNow();
     const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
@@ -658,12 +713,10 @@ exports.startCall = onCall(
       createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
       durationMinutes: offer.durationMinutes || null,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      roomUrl: room.url,
+      roomName: room.name,
+      token: tokenData.token
     };
-
-    if (offer.type === "video") {
-      callData.roomUrl = `https://api.daily.co/v1/rooms/call-${callRef.id}`;
-      callData.token = "demo-token-" + callRef.id;
-    }
 
     await callRef.set(callData);
     return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
@@ -671,7 +724,7 @@ exports.startCall = onCall(
 );
 
 exports.acceptCall = onCall(
-  { region: "us-central1" },
+  { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
     const uid = requireAuth(request);
     const callId = request.data?.callId;
@@ -679,6 +732,7 @@ exports.acceptCall = onCall(
     const callRef = db.doc(`calls/${callId}`);
 
     let roomUrl = "";
+    let roomName = "";
     let token = "";
 
     await db.runTransaction(async (tx) => {
@@ -689,7 +743,7 @@ exports.acceptCall = onCall(
       if (call.status !== "ringing") throw new HttpsError("failed-precondition", "Not ringing");
 
       roomUrl = call.roomUrl || "";
-      token = call.token || "";
+      roomName = call.roomName || "";
 
       const rate = call.pricingSnapshot.ratePerMinute || call.pricingSnapshot.ratePerSession;
       if (!rate) throw new HttpsError("failed-precondition", "NO_RATE_DEFINED");
@@ -714,6 +768,16 @@ exports.acceptCall = onCall(
         billedCoins: rate 
       });
     });
+
+    // Generate token for receiver
+    const tokenData = await fetchDaily("meeting-tokens", "POST", {
+      properties: {
+        room_name: roomName,
+        user_name: request.auth.token.name || "Receiver",
+        is_owner: false
+      }
+    });
+    token = tokenData.token;
 
     return { ok: true, roomUrl, token };
   }

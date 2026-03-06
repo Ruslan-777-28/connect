@@ -57,12 +57,16 @@ export async function startVideoCall(
 
     return { callId };
   } catch (error: any) {
+    console.error("Start call error details:", error);
     // Standardize error codes based on server responses
     if (error?.code === 'not-found' && error?.message === 'OFFER_NOT_FOUND') {
       throw new Error('OFFER_NOT_FOUND');
     }
     if (error?.code === 'failed-precondition' && error?.message === 'INSUFFICIENT_BALANCE') {
       throw new Error('INSUFFICIENT_BALANCE');
+    }
+    if (error?.code === 'failed-precondition' && error?.message === 'DAILY_API_KEY_NOT_CONFIGURED') {
+      throw new Error('Система відеочатів не налаштована (відсутній API ключ).');
     }
     
     throw error;

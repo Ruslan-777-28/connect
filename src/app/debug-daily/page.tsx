@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -37,7 +38,7 @@ export default function DebugDailyPage() {
       const createDailyRoom = httpsCallable(functions, 'createDailyRoom');
 
       const result: any = await createDailyRoom({}); // Pass empty object
-      console.log(result.data);
+      console.log("DEBUG CREATE ROOM RESULT:", result.data);
 
 
       if (result.data?.roomUrl) {
@@ -46,7 +47,7 @@ export default function DebugDailyPage() {
         setError(result.data?.error || 'No roomUrl returned from function.');
       }
     } catch (e: any) {
-      console.error(e);
+      console.error("DEBUG CREATE ROOM ERROR:", e);
       setError(e.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
@@ -75,7 +76,14 @@ export default function DebugDailyPage() {
           )}
 
           {error && (
-            <p className="text-sm font-medium text-destructive">{error}</p>
+            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+              <p className="text-sm font-medium text-destructive">Error: {error}</p>
+              {error === "DAILY_API_KEY_NOT_CONFIGURED" && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Hint: Set DAILY_API_KEY secret in Firebase Console.
+                </p>
+              )}
+            </div>
           )}
 
           {roomUrl && (
