@@ -83,7 +83,6 @@ function applyCoinTransferTx(tx, { db, fromUid, toUid, amount, callId, kind, met
 
 // --- DAILY.CO UTILS ---
 async function fetchDaily(path, method = 'GET', body = null) {
-  // Отримуємо ключ і очищаємо його від зайвих символів
   let key = "";
   try {
     key = DAILY_API_KEY.value().trim();
@@ -107,7 +106,6 @@ async function fetchDaily(path, method = 'GET', body = null) {
   const data = await res.json();
   if (!res.ok) {
     logger.error("Daily API Error Details:", { status: res.status, data });
-    // Передаємо конкретну помилку від Daily
     throw new HttpsError("internal", data.info || data.error || `Daily API Error ${res.status}`);
   }
   return data;
@@ -314,7 +312,6 @@ exports.acceptCommunicationRequest = onCall(
         if (prodSnap.exists) {
           const prod = prodSnap.data();
           
-          // Send delivery text
           tx.set(reqRef.collection("messages").doc(), {
             senderId: uid,
             kind: "answer",
@@ -322,7 +319,6 @@ exports.acceptCommunicationRequest = onCall(
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
           });
 
-          // Send delivery image if exists
           if (prod.deliveryImageUrl) {
             tx.set(reqRef.collection("messages").doc(), {
               senderId: uid,
@@ -578,7 +574,6 @@ exports.expireCommunicationRequests = onSchedule(
   }
 );
 
-// Cleanup expired scheduled offers that were never booked
 exports.cleanupExpiredOffers = onSchedule(
   { region: "us-central1", schedule: "every 1 hours" },
   async () => {
@@ -599,13 +594,12 @@ exports.cleanupExpiredOffers = onSchedule(
   }
 );
 
-// Send reminders for upcoming calls
 exports.sendCallReminders = onSchedule(
   { region: "us-central1", schedule: "every 5 minutes" },
   async () => {
     const db = admin.firestore();
     const now = Date.now();
-    const reminderWindow = now + 10 * 60000; // Starting in next 10 mins
+    const reminderWindow = now + 10 * 60000;
     
     const snap = await db.collection("communicationRequests")
       .where("status", "==", "accepted")
@@ -618,7 +612,6 @@ exports.sendCallReminders = onSchedule(
       const req = docSnap.data();
       const requestId = docSnap.id;
       
-      // Check if reminder already sent
       const alreadySent = await db.collection("notifications")
         .where("requestId", "==", requestId)
         .where("kind", "==", "call_reminder")
@@ -645,7 +638,7 @@ exports.createDailyRoom = onCall(
     requireAuth(request);
     const room = await fetchDaily("rooms", "POST", {
       properties: {
-        exp: Math.round(Date.now() / 1000) + 3600, // 1 hour expiry
+        exp: Math.round(Date.now() / 1000) + 3600,
         enable_chat: true,
       }
     });
@@ -656,79 +649,122 @@ exports.createDailyRoom = onCall(
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
-    const callerId = requireAuth(request);
-    const receiverId = request.data?.receiverId;
-    const offerId = request.data?.offerId;
-    if (!receiverId || !offerId) throw new HttpsError("invalid-argument", "Missing data");
+    try {
+      const callerId = requireAuth(request);
+      const receiverId = request.data?.receiverId;
+      const offerId = request.data?.offerId;
 
-    const offerSnap = await admin.firestore().doc(`communicationOffers/${offerId}`).get();
-    if (!offerSnap.exists) throw new HttpsError("not-found", "OFFER_NOT_FOUND");
-    const offer = offerSnap.data();
+      logger.info("startCall input", { callerId, receiverId, offerId });
 
-    // Availability switch logic
-    if (offer.schedulingType === 'instant') {
-      const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
-      if (receiverSnap.exists) {
-        const receiver = receiverSnap.data();
-        const isOnline = receiver.availability?.status === 'online';
-        const until = receiver.availability?.until;
-        const expired = until && (until.toMillis() < Date.now());
-        
-        if (!isOnline || expired) {
-          throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
+      if (!receiverId || !offerId) {
+        logger.error("startCall missing data", { receiverId, offerId });
+        throw new HttpsError("invalid-argument", "Missing data");
+      }
+
+      const offerRef = admin.firestore().doc(`communicationOffers/${offerId}`);
+      const offerSnap = await offerRef.get();
+
+      logger.info("startCall offer exists", { offerId, exists: offerSnap.exists });
+
+      if (!offerSnap.exists) {
+        logger.error("startCall OFFER_NOT_FOUND", { offerId });
+        throw new HttpsError("not-found", "OFFER_NOT_FOUND");
+      }
+
+      const offer = offerSnap.data();
+
+      logger.info("startCall offer data", {
+        offerId,
+        ownerId: offer?.ownerId || null,
+        type: offer?.type || null,
+        hasPricing: !!offer?.pricing,
+        pricing: offer?.pricing || null,
+      });
+
+      if (!offer?.pricing) {
+        logger.error("startCall pricing missing", { offerId, offer });
+        throw new HttpsError("failed-precondition", "OFFER_PRICING_MISSING");
+      }
+
+      // Check availability / scheduling
+      if (offer.schedulingType === 'instant') {
+        const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+        if (receiverSnap.exists) {
+          const receiver = receiverSnap.data();
+          const isOnline = receiver.availability?.status === 'online';
+          const until = receiver.availability?.until;
+          const expired = until && (until.toMillis() < Date.now());
+          if (!isOnline || expired) {
+            logger.warn("startCall receiver offline", { receiverId });
+            throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
+          }
+        }
+      } else {
+        const now = Date.now();
+        const start = offer.scheduledStart.toMillis() - 5 * 60000;
+        const end = offer.scheduledEnd.toMillis();
+        if (now < start || now > end) {
+          logger.warn("startCall NOT_CALL_TIME", { now, start, end });
+          throw new HttpsError("failed-precondition", "NOT_CALL_TIME");
         }
       }
-    } else {
-      // For scheduled calls, ensure it's call time (e.g. +/- 5 min window)
-      const now = Date.now();
-      const start = offer.scheduledStart.toMillis() - 5 * 60000;
-      const end = offer.scheduledEnd.toMillis();
-      if (now < start || now > end) {
-        throw new HttpsError("failed-precondition", "NOT_CALL_TIME");
-      }
+
+      const pricingSnapshot = {
+        type: offer.type,
+        currency: COIN_CURRENCY,
+        ratePerMinute: offer.pricing.ratePerMinute || null,
+        ratePerSession: offer.pricing.ratePerSession || null,
+      };
+
+      logger.info("startCall pricingSnapshot", { pricingSnapshot });
+
+      // 1. Create real Daily room
+      const roomName = `call-${Date.now()}-${offerId.slice(0,5)}`;
+      const room = await fetchDaily("rooms", "POST", {
+        name: roomName,
+        properties: {
+          exp: Math.round(Date.now() / 1000) + 3600,
+        }
+      });
+
+      // 2. Create token for caller
+      const tokenData = await fetchDaily("meeting-tokens", "POST", {
+        properties: {
+          room_name: roomName,
+          user_name: request.auth.token.name || "Caller",
+          is_owner: true
+        }
+      });
+
+      const callRef = admin.firestore().collection("calls").doc();
+      const nowTs = tsNow();
+      const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
+
+      const callData = {
+        status: "ringing", callerId, receiverId, callerName: request.auth.token.name || "Anonymous",
+        createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
+        durationMinutes: offer.durationMinutes || null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        roomUrl: room.url,
+        roomName: roomName,
+        token: tokenData.token
+      };
+
+      logger.info("startCall callData ready", {
+        callId: callRef.id,
+        type: callData.type,
+        receiverId: callData.receiverId,
+      });
+
+      await callRef.set(callData);
+
+      logger.info("startCall success", { callId: callRef.id, offerId, receiverId });
+
+      return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
+    } catch (error) {
+      logger.error("startCall failed", error);
+      throw error;
     }
-
-    const pricingSnapshot = {
-      type: offer.type,
-      currency: COIN_CURRENCY,
-      ratePerMinute: offer.pricing.ratePerMinute || null,
-      ratePerSession: offer.pricing.ratePerSession || null,
-    };
-
-    // 1. Create real Daily room
-    const roomName = `call-${Date.now()}-${offerId.slice(0,5)}`;
-    const room = await fetchDaily("rooms", "POST", {
-      name: roomName,
-      properties: {
-        exp: Math.round(Date.now() / 1000) + 3600,
-      }
-    });
-
-    // 2. Create token for caller
-    const tokenData = await fetchDaily("meeting-tokens", "POST", {
-      properties: {
-        room_name: roomName,
-        user_name: request.auth.token.name || "Caller",
-        is_owner: true
-      }
-    });
-
-    const callRef = admin.firestore().collection("calls").doc();
-    const nowTs = tsNow();
-    const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
-
-    const callData = {
-      status: "ringing", callerId, receiverId, callerName: request.auth.token.name || "Anonymous",
-      createdAtTs: nowTs, expiresAt, offerId, pricingSnapshot, type: offer.type,
-      durationMinutes: offer.durationMinutes || null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      roomUrl: room.url,
-      roomName: roomName,
-      token: tokenData.token
-    };
-
-    await callRef.set(callData);
-    return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
   }
 );
 
@@ -778,7 +814,6 @@ exports.acceptCall = onCall(
       });
     });
 
-    // Generate token for receiver
     const tokenData = await fetchDaily("meeting-tokens", "POST", {
       properties: {
         room_name: roomName,
