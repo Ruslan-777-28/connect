@@ -708,13 +708,13 @@ exports.startCall = onCall(
             throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
           }
         }
-      } else {
+      } else if (offer.schedulingType === 'scheduled' && offer.scheduledStart && offer.scheduledEnd) {
         const now = Date.now();
         const start = offer.scheduledStart.toMillis() - 5 * 60000;
         const end = offer.scheduledEnd.toMillis();
         if (now < start || now > end) {
           logger.warn("startCall NOT_CALL_TIME", { now, start, end });
-          throw new HttpsError("failed-precondition", "NOT_CALL_TIME");
+          throw new HttpsError("failed-precondition", "CALL_NOT_IN_TIME_WINDOW");
         }
       }
 
