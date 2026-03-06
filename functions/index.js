@@ -702,7 +702,7 @@ exports.startCall = onCall(
           const receiver = receiverSnap.data();
           const isOnline = receiver.availability?.status === 'online';
           const until = receiver.availability?.until;
-          const expired = until && (until.toMillis() < Date.now());
+          const expired = until && (until.toMillis?.() < Date.now());
           if (!isOnline || expired) {
             logger.warn("startCall receiver offline", { receiverId });
             throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
@@ -710,8 +710,8 @@ exports.startCall = onCall(
         }
       } else if (offer.schedulingType === 'scheduled' && offer.scheduledStart && offer.scheduledEnd) {
         const now = Date.now();
-        const start = offer.scheduledStart.toMillis() - 5 * 60000;
-        const end = offer.scheduledEnd.toMillis();
+        const start = (offer.scheduledStart?.toMillis?.() || 0) - 5 * 60000;
+        const end = offer.scheduledEnd?.toMillis?.() || 0;
         if (now < start || now > end) {
           logger.warn("startCall NOT_CALL_TIME", { now, start, end });
           throw new HttpsError("failed-precondition", "CALL_NOT_IN_TIME_WINDOW");
@@ -853,7 +853,7 @@ exports.endCall = onCall(
       const updates = { status: "ended", endReason: reason || "ended_by_user", endedAtTs: tsNow() };
 
       if (call.status === "accepted" && call.type === "video" && call.acceptedAtTs && !call.pricingSnapshot.ratePerSession) {
-        const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
+        const elapsedSec = Math.floor((Date.now() - (call.acceptedAtTs?.toMillis?.() || Date.now())) / 1000);
         const totalMin = ceilMinutesByRule(elapsedSec);
         const dueMin = totalMin - call.billedMinutes;
         if (dueMin > 0) {
@@ -877,7 +877,7 @@ exports.billingTickAcceptedCalls = onSchedule(
     for (const docSnap of snap.docs) {
       const call = docSnap.data();
       if (call.type !== "video" || !call.acceptedAtTs || call.pricingSnapshot.ratePerSession) continue;
-      const elapsedSec = Math.floor((Date.now() - call.acceptedAtTs.toMillis()) / 1000);
+      const elapsedSec = Math.floor((Date.now() - (call.acceptedAtTs?.toMillis?.() || Date.now())) / 1000);
       const currentFullMin = Math.floor(elapsedSec / 60);
       const dueMin = currentFullMin - call.billedMinutes + 1;
       if (dueMin > 0) {
