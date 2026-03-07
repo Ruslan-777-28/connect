@@ -1,17 +1,17 @@
 import type { Timestamp } from 'firebase/firestore';
 import type { 
-  TranslationParticipant, 
-  CallTranslation, 
-  TranslationSegment,
+  TranslationParticipantState, 
+  CallTranslationDoc, 
+  TranslationSegmentDoc,
   TranslationMode,
   TranslationStatus,
   TranslationBotStatus
 } from './translation/types';
 
 export type { 
-  TranslationParticipant, 
-  CallTranslation, 
-  TranslationSegment,
+  TranslationParticipantState as TranslationParticipant, 
+  CallTranslationDoc as CallTranslation, 
+  TranslationSegmentDoc as TranslationSegment,
   TranslationMode,
   TranslationStatus,
   TranslationBotStatus

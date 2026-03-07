@@ -1,53 +1,148 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { Timestamp, DocumentData } from 'firebase/firestore';
+
+export type TranslationProvider = 'azure_speech';
 
 export type TranslationMode = 'captions_only' | 'voice_translation';
 
-export type TranslationStatus = 'idle' | 'starting' | 'active' | 'error' | 'ended';
+export type TranslationStatus =
+  | 'idle'
+  | 'starting'
+  | 'active'
+  | 'error'
+  | 'ended';
 
-export type TranslationBotStatus = 'not_joined' | 'joining' | 'joined' | 'processing' | 'failed' | 'left';
+export type TranslationBotStatus =
+  | 'not_joined'
+  | 'joining'
+  | 'joined'
+  | 'processing'
+  | 'failed'
+  | 'left';
 
-export interface TranslationParticipant {
+export type TranslationSegmentStatus = 'partial' | 'final' | 'error';
+
+export type TranslationErrorSource =
+  | 'bot'
+  | 'azure'
+  | 'daily'
+  | 'firestore'
+  | null;
+
+export type TranslationParticipantRole = 'caller' | 'callee';
+
+export interface TranslationParticipantState {
   uid: string;
-  role: 'caller' | 'callee';
+  role: TranslationParticipantRole;
+  displayName: string | null;
+
   sourceLocale: string;
   targetLocale: string;
+
   captionsEnabled: boolean;
   audioTranslationEnabled: boolean;
+
+  joinedAt: Timestamp | null;
+  leftAt: Timestamp | null;
+
+  streamStatus: 'idle' | 'listening' | 'muted' | 'disconnected' | 'error';
 }
 
-export interface CallTranslation {
-  id: string; // matches callId
+export interface TranslationErrorInfo {
+  code: string | null;
+  message: string | null;
+  source: TranslationErrorSource;
+  at: Timestamp | null;
+}
+
+export interface TranslationMetrics {
+  totalSegments: number;
+  finalSegments: number;
+  partialSegments: number;
+  droppedSegments: number;
+  avgLatencyMs: number | null;
+  maxLatencyMs: number | null;
+}
+
+export interface TranslationSourceInfo {
+  roomName: string | null;
+  dailyRoomUrl: string | null;
+}
+
+export interface CallTranslationDoc {
   callId: string;
+  callStatus: 'pending' | 'accepted' | 'active' | 'ended' | 'missed';
+
   enabled: boolean;
   mode: TranslationMode;
   status: TranslationStatus;
-  provider: 'azure_speech';
+  provider: TranslationProvider;
   botStatus: TranslationBotStatus;
-  participants: Record<string, TranslationParticipant>;
-  lastError?: {
-    code: string | null;
-    message: string | null;
-    source: 'bot' | 'azure' | 'daily' | 'firestore' | null;
-  };
-  startedAt?: Timestamp | any;
-  activatedAt?: Timestamp | any;
-  endedAt?: Timestamp | any;
-  createdAt: Timestamp | any;
-  updatedAt: Timestamp | any;
+
+  source: TranslationSourceInfo;
+
+  participants: Record<string, TranslationParticipantState>;
+
+  languagePairKey: string;
+
+  startedAt: Timestamp | null;
+  activatedAt: Timestamp | null;
+  endedAt: Timestamp | null;
+  lastSegmentAt: Timestamp | null;
+
+  lastError: TranslationErrorInfo | null;
+
+  metrics: TranslationMetrics;
+
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
-export interface TranslationSegment {
-  id: string;
+export interface TranslationSegmentDoc {
+  callId: string;
+
   speakerUid: string;
-  speakerRole: 'caller' | 'callee';
+  speakerRole: TranslationParticipantRole;
+  speakerDisplayName: string | null;
+
   sourceLocale: string;
   targetLocale: string;
+
   originalText: string;
   translatedText: string;
+
   isFinal: boolean;
   sequence: number;
-  status: 'partial' | 'final' | 'error';
+
+  startedAt: Timestamp | null;
+  emittedAt: Timestamp;
+  finalizedAt: Timestamp | null;
+
   latencyMs: number | null;
-  emittedAt: Timestamp | any;
-  finalizedAt?: Timestamp | any;
+
+  provider: TranslationProvider;
+  status: TranslationSegmentStatus;
+
+  errorCode: string | null;
+}
+
+export type CallTranslationDocInput = Omit<
+  CallTranslationDoc,
+  'createdAt' | 'updatedAt'
+> & {
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
+};
+
+export type TranslationSegmentDocInput = Omit<TranslationSegmentDoc, 'emittedAt'> & {
+  emittedAt?: Timestamp;
+};
+
+export function isCallTranslationDoc(value: DocumentData | undefined): value is CallTranslationDoc {
+  return !!value && typeof value.callId === 'string' && typeof value.enabled === 'boolean';
+}
+
+export function isTranslationSegmentDoc(
+  value: DocumentData | undefined,
+): value is TranslationSegmentDoc {
+  return !!value && typeof value.speakerUid === 'string' && typeof value.sequence === 'number';
 }
