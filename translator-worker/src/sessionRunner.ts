@@ -8,6 +8,7 @@ import {
   markWorkerJoining,
   markWorkerProcessing,
 } from './firestore';
+import { translateText } from './azure/translationEngine';
 
 const activeSessions = new Map<string, Promise<void>>();
 
@@ -42,6 +43,20 @@ export async function runTranslationSession(callId: string) {
 
       await sleep(500);
       await markWorkerProcessing(callId);
+
+      // --- AZURE TEST START ---
+      try {
+        console.log(`[AzureTest] Testing translation for ${callId}...`);
+        const test = await translateText(
+          "Hello, how are you",
+          "en-US",
+          "uk-UA"
+        );
+        console.log("Azure translation test successful:", test);
+      } catch (azureErr: any) {
+        console.error("Azure translation test FAILED:", azureErr.message);
+      }
+      // --- AZURE TEST END ---
 
       await appendTestSegment({
         callId,
