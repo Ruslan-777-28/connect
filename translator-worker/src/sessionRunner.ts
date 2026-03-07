@@ -1,4 +1,6 @@
 import {
+  appendTestSegment,
+  clearSegments,
   getTranslationDoc,
   markWorkerEnded,
   markWorkerError,
@@ -27,15 +29,81 @@ export async function runTranslationSession(callId: string) {
         throw new Error(`Translation doc not found for callId=${callId}`);
       }
 
+      await clearSegments(callId);
       await markWorkerJoined(callId);
 
-      // Placeholder for future Daily join + Azure init
-      await sleep(500);
+      const participants = Object.values((data.participants ?? {}) as Record<string, any>);
+      const caller = participants.find((p) => p.role === 'caller') ?? participants[0];
+      const callee = participants.find((p) => p.role === 'callee') ?? participants[1] ?? participants[0];
 
+      if (!caller || !callee) {
+        throw new Error('Expected at least one participant in translation doc');
+      }
+
+      await sleep(500);
       await markWorkerProcessing(callId);
 
-      // Placeholder for future live loop
-      // For now, worker just marks the session active and exits.
+      await appendTestSegment({
+        callId,
+        speakerUid: caller.uid,
+        speakerRole: caller.role,
+        speakerDisplayName: caller.displayName ?? 'Caller',
+        sourceLocale: caller.sourceLocale ?? 'uk-UA',
+        targetLocale: caller.targetLocale ?? 'en-US',
+        originalText: 'Привіт',
+        translatedText: 'Hello',
+        isFinal: false,
+        sequence: 1,
+        latencyMs: 180,
+      });
+
+      await sleep(900);
+
+      await appendTestSegment({
+        callId,
+        speakerUid: caller.uid,
+        speakerRole: caller.role,
+        speakerDisplayName: caller.displayName ?? 'Caller',
+        sourceLocale: caller.sourceLocale ?? 'uk-UA',
+        targetLocale: caller.targetLocale ?? 'en-US',
+        originalText: 'Привіт, як справи?',
+        translatedText: 'Hello, how are you?',
+        isFinal: true,
+        sequence: 2,
+        latencyMs: 240,
+      });
+
+      await sleep(1200);
+
+      await appendTestSegment({
+        callId,
+        speakerUid: callee.uid,
+        speakerRole: callee.role,
+        speakerDisplayName: callee.displayName ?? 'Callee',
+        sourceLocale: callee.sourceLocale ?? 'en-US',
+        targetLocale: callee.targetLocale ?? 'uk-UA',
+        originalText: 'I am good, thank you.',
+        translatedText: 'У мене все добре, дякую.',
+        isFinal: true,
+        sequence: 3,
+        latencyMs: 210,
+      });
+
+      await sleep(1200);
+
+      await appendTestSegment({
+        callId,
+        speakerUid: caller.uid,
+        speakerRole: caller.role,
+        speakerDisplayName: caller.displayName ?? 'Caller',
+        sourceLocale: caller.sourceLocale ?? 'uk-UA',
+        targetLocale: caller.targetLocale ?? 'en-US',
+        originalText: 'Чудово, почнемо консультацію.',
+        translatedText: 'Great, let us begin the consultation.',
+        isFinal: true,
+        sequence: 4,
+        latencyMs: 260,
+      });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown translation worker error';
