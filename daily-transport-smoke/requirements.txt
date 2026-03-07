@@ -1,3 +1,4 @@
 daily-python==0.19.9
 python-dotenv==1.0.1
 azure-cognitiveservices-speech==1.43.0
+firebase-admin==6.5.0
