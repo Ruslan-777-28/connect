@@ -1,0 +1,25 @@
+{
+  "callStatus": "accepted",
+  "roomName": "test-room",
+  "dailyRoomUrl": "https://example.daily.co/test-room",
+  "participants": [
+    {
+      "uid": "user-1",
+      "role": "caller",
+      "displayName": "Caller",
+      "sourceLocale": "uk-UA",
+      "targetLocale": "en-US",
+      "captionsEnabled": true,
+      "audioTranslationEnabled": false
+    },
+    {
+      "uid": "user-2",
+      "role": "callee",
+      "displayName": "Callee",
+      "sourceLocale": "en-US",
+      "targetLocale": "uk-UA",
+      "captionsEnabled": true,
+      "audioTranslationEnabled": false
+    }
+  ]
+}
