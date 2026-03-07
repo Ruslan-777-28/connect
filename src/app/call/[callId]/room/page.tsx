@@ -8,11 +8,15 @@ import { useFirebaseApp, useFirestore } from '@/firebase';
 import { endCallClient } from '@/lib/calls';
 import type { Call } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { PhoneOff, Loader2 } from 'lucide-react';
+import { PhoneOff, Loader2, MessageSquareQuote, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useCallTranslation } from '@/hooks/useCallTranslation';
+import { TranslationStatusBadge } from '@/components/call/TranslationStatusBadge';
+import { TranslatedCaptionsPanel } from '@/components/call/TranslatedCaptionsPanel';
+import { cn } from '@/lib/utils';
 
 function buildDailyUrl(roomUrl: string, token: string) {
   const url = new URL(roomUrl);
-  url.searchParams.set('t', token); // ok for MVP
+  url.searchParams.set('t', token);
   return url.toString();
 }
 
@@ -29,8 +33,11 @@ export default function CallRoomPage() {
 
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<Call['status'] | 'unknown'>('unknown');
+  const [showCaptions, setShowCaptions] = useState(true);
 
-  // читаємо з sessionStorage (MVP)
+  // Translation Layer
+  const { translation, segments, status: translationStatus } = useCallTranslation(callId);
+
   const token = useMemo(() => sessionStorage.getItem(`dailyToken:${callId}`), [callId]);
   const roomUrl = useMemo(() => sessionStorage.getItem(`dailyRoomUrl:${callId}`), [callId]);
 
@@ -40,7 +47,6 @@ export default function CallRoomPage() {
   }, [roomUrl, token]);
 
   const hardExitToHome = useCallback(() => {
-    // чистимо локальні ключі (щоб не “залипало”)
     sessionStorage.removeItem(`dailyToken:${callId}`);
     sessionStorage.removeItem(`dailyRoomUrl:${callId}`);
     router.replace('/');
@@ -63,47 +69,35 @@ export default function CallRoomPage() {
   const handleEnd = useCallback(async () => {
     if (endingRef.current) return;
     endingRef.current = true;
-
-    // server-first
     await endCallClient(app, callId, 'ended');
-    // НЕ робимо router тут — дочекаємось Firestore status === ended
   }, [app, callId]);
 
-  // 1) Firestore listener — істина стану
   useEffect(() => {
     const unsub = onSnapshot(
       doc(firestore, 'calls', callId),
       async (snap) => {
         setLoading(false);
-
         if (!snap.exists()) {
-          // документ пропав — виходимо
           await leaveAndDestroy();
           hardExitToHome();
           return;
         }
-
         const data = snap.data() as Call;
         setStatus(data.status ?? 'unknown');
-
         if (data.status === 'ended') {
-          // server-driven завершення
           await leaveAndDestroy();
           hardExitToHome();
         }
       },
       async () => {
-        // при помилці лістенера — безпечний вихід
         setLoading(false);
         await leaveAndDestroy();
         hardExitToHome();
       }
     );
-
     return () => unsub();
   }, [callId, firestore, hardExitToHome, leaveAndDestroy]);
 
-  // 2) Монтуємо Daily embedded
   useEffect(() => {
     if (!urlWithToken) {
       hardExitToHome();
@@ -114,39 +108,22 @@ export default function CallRoomPage() {
   
     let cancelled = false;
   
-    const attachIframeToContainer = (call: any) => {
-      try {
-        const iframe: HTMLIFrameElement | undefined = call.iframe?.();
-        if (iframe && iframe.parentElement !== container) {
-          container.innerHTML = '';
-          container.appendChild(iframe);
-        }
-      } catch {}
-    };
-  
     (async () => {
-      // 1) Якщо інстанс already існує (StrictMode/fast refresh) — РЕЮЗАЄМО
       try {
         const existing = (DailyIframe as any).getCallInstance?.();
         if (existing) {
           callRef.current = existing;
-          attachIframeToContainer(existing);
-  
-          // якщо ще не в кімнаті — підʼєднатись
-          try {
-            // join() безпечний — якщо вже joined, Daily просто проігнорує/не зламається
-            existing.join?.({ url: urlWithToken });
-          } catch {}
-  
-          return; // ✅ НЕ createFrame()
+          const iframe = existing.iframe?.();
+          if (iframe && iframe.parentElement !== container) {
+            container.innerHTML = '';
+            container.appendChild(iframe);
+          }
+          try { existing.join?.({ url: urlWithToken }); } catch {}
+          return;
         }
       } catch {}
   
-      // 2) Якщо інстанса нема — створюємо новий
-      // (додатково чистимо контейнер на всякий)
       container.innerHTML = '';
-  
-      // маленька пауза, щоб dev teardown встиг “докрутитись”
       await new Promise((r) => setTimeout(r, 0));
       if (cancelled) return;
   
@@ -162,11 +139,8 @@ export default function CallRoomPage() {
       });
   
       callRef.current = call;
-  
       call.join({ url: urlWithToken });
-  
       call.on('left-meeting', () => {
-        // не авто-end (без webhooks), просто повертаємось
         try { call.destroy(); } catch {}
         callRef.current = null;
         hardExitToHome();
@@ -175,37 +149,67 @@ export default function CallRoomPage() {
   
     return () => {
       cancelled = true;
-  
-      // ✅ Важливо: у StrictMode не завжди хочемо “агресивно” destroy,
-      // бо React може одразу перемонтувати і нам краще реюзнути instance.
-      // Тому робимо м’який cleanup контейнера, а destroy — тільки коли реально ended.
-      try {
-        // прибрати iframe з DOM, але instance може лишитись для реюзу
-        if (containerRef.current) containerRef.current.innerHTML = '';
-      } catch {}
+      if (containerRef.current) containerRef.current.innerHTML = '';
     };
   }, [hardExitToHome, urlWithToken]);
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      <div className="flex items-center justify-between gap-3 p-4 border-b bg-background">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          <span className="capitalize">status: {status}</span>
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 p-3 border-b bg-background/95 backdrop-blur-md z-20">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-1 rounded">
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+            <span className="uppercase tracking-widest">{status}</span>
+          </div>
+          
+          <TranslationStatusBadge status={translationStatus} />
         </div>
 
-        <Button
-          variant="destructive"
-          onClick={handleEnd}
-          disabled={loading || status === 'ended'}
-        >
-          <PhoneOff className="mr-2 h-4 w-4" />
-          End Call
-        </Button>
+        <div className="flex items-center gap-2">
+          {translation?.enabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowCaptions(!showCaptions)}
+              className={cn("h-9 rounded-full px-4 border-primary/20", showCaptions && "bg-primary/10 text-primary")}
+            >
+              <MessageSquareQuote className="mr-2 h-4 w-4" />
+              {showCaptions ? 'Приховати субтитри' : 'Показати субтитри'}
+            </Button>
+          )}
+
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={handleEnd}
+            disabled={loading || status === 'ended'}
+            className="h-9 rounded-full px-4 shadow-lg shadow-destructive/20"
+          >
+            <PhoneOff className="mr-2 h-4 w-4" />
+            Завершити
+          </Button>
+        </div>
       </div>
 
-      <div className="flex-1 p-4 bg-muted/40">
-        <div ref={containerRef} className="h-full w-full" />
+      <div className="flex flex-1 relative overflow-hidden bg-muted/20 p-2 sm:p-4">
+        {/* Daily Iframe Container */}
+        <div className="flex-1 h-full w-full">
+          <div ref={containerRef} className="h-full w-full" />
+        </div>
+
+        {/* Captions Panel Overlay/Sidebar */}
+        {translation?.enabled && showCaptions && (
+          <div className={cn(
+            "absolute right-4 bottom-24 top-20 w-full max-w-[320px] z-10 transition-all duration-500 ease-in-out",
+            showCaptions ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"
+          )}>
+            <TranslatedCaptionsPanel 
+              segments={segments} 
+              className="h-full w-full"
+            />
+          </div>
+        )}
       </div>
     </div>
   );
