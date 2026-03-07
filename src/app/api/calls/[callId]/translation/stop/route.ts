@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 import { adminDb } from '@/lib/firebase/admin';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
+import { stopWorkerTranslationSession } from '@/lib/translation/worker-client';
 
 interface StopTranslationRequestBody {
   reason?: string;
@@ -32,6 +33,38 @@ export async function POST(
       );
     }
 
+    let worker;
+    try {
+      worker = await stopWorkerTranslationSession({
+        callId,
+        reason: body.reason ?? 'manual',
+      });
+    } catch (workerError) {
+      const message =
+        workerError instanceof Error ? workerError.message : 'Unknown worker stop error';
+
+      await translationRef.set(
+        {
+          updatedAt: FieldValue.serverTimestamp(),
+          lastError: {
+            code: 'WORKER_STOP_FAILED',
+            message,
+            source: 'bot',
+            at: FieldValue.serverTimestamp(),
+          },
+        },
+        { merge: true },
+      );
+
+      return NextResponse.json(
+        {
+          error: 'Translation stop requested, but worker failed to stop cleanly',
+          details: message,
+        },
+        { status: 502 },
+      );
+    }
+
     await translationRef.set(
       {
         enabled: false,
@@ -50,6 +83,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       callId,
+      worker,
       translation: savedSnap.data(),
     });
   } catch (error) {

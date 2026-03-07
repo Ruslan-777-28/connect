@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { buildInitialTranslationDoc } from '@/lib/translation/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
+import { startWorkerTranslationSession } from '@/lib/translation/worker-client';
 
 interface StartTranslationRequestBody {
   roomName?: string | null;
@@ -60,10 +61,10 @@ export async function POST(
         botStatus: 'joining',
       });
     } else {
-      const participantPatch: Record<string, unknown> = {};
+      const participantMap: Record<string, unknown> = {};
 
       for (const participant of body.participants) {
-        participantPatch[`participants.${participant.uid}`] = {
+        participantMap[participant.uid] = {
           uid: participant.uid,
           role: participant.role,
           displayName: participant.displayName ?? null,
@@ -88,13 +89,49 @@ export async function POST(
             roomName: body.roomName ?? null,
             dailyRoomUrl: body.dailyRoomUrl ?? null,
           },
+          participants: participantMap,
           startedAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
           endedAt: null,
           lastError: null,
-          ...participantPatch,
         },
         { merge: true },
+      );
+    }
+
+    let worker;
+    try {
+      worker = await startWorkerTranslationSession({
+        callId,
+        roomName: body.roomName ?? null,
+        dailyRoomUrl: body.dailyRoomUrl ?? null,
+        participants: body.participants,
+      });
+    } catch (workerError) {
+      const message =
+        workerError instanceof Error ? workerError.message : 'Unknown worker start error';
+
+      await translationRef.set(
+        {
+          status: 'error',
+          botStatus: 'failed',
+          updatedAt: FieldValue.serverTimestamp(),
+          lastError: {
+            code: 'WORKER_START_FAILED',
+            message,
+            source: 'bot',
+            at: FieldValue.serverTimestamp(),
+          },
+        },
+        { merge: true },
+      );
+
+      return NextResponse.json(
+        {
+          error: 'Translation session created, but worker failed to start',
+          details: message,
+        },
+        { status: 502 },
       );
     }
 
@@ -103,6 +140,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       callId,
+      worker,
       translation: savedSnap.data(),
     });
   } catch (error) {
