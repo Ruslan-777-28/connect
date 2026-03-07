@@ -41,6 +41,16 @@ export async function POST(
       );
     }
 
+    // Strict validation for each participant
+    for (const p of body.participants) {
+      if (!p.uid || !p.role) {
+        return NextResponse.json(
+          { error: 'Each participant must have a uid and a role' },
+          { status: 400 },
+        );
+      }
+    }
+
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const existingSnap = await translationRef.get();
 
