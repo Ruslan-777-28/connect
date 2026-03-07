@@ -168,6 +168,43 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "uid", "targetId", "type", "createdAt"]
+    },
+    "CallTranslation": {
+      "title": "CallTranslation",
+      "type": "object",
+      "properties": {
+        "callId": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["captions_only", "voice_translation"] },
+        "status": { "type": "string", "enum": ["idle", "starting", "active", "error", "ended"] },
+        "provider": { "type": "string", "default": "azure_speech" },
+        "botStatus": { "type": "string", "enum": ["not_joined", "joining", "joined", "processing", "failed", "left"] },
+        "participants": { "type": "object" },
+        "lastError": { "type": "object" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "endedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "TranslationSegment": {
+      "title": "TranslationSegment",
+      "type": "object",
+      "properties": {
+        "speakerUid": { "type": "string" },
+        "speakerRole": { "type": "string", "enum": ["caller", "callee"] },
+        "sourceLocale": { "type": "string" },
+        "targetLocale": { "type": "string" },
+        "originalText": { "type": "string" },
+        "translatedText": { "type": "string" },
+        "isFinal": { "type": "boolean" },
+        "sequence": { "type": "number" },
+        "status": { "type": "string", "enum": ["partial", "final", "error"] },
+        "latencyMs": { "type": "number" },
+        "emittedAt": { "type": "string", "format": "date-time" },
+        "finalizedAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "auth": {
@@ -214,6 +251,14 @@
       {
         "path": "/likes/{likeId}",
         "definition": { "entityName": "Like", "schema": { "$ref": "#/backend/entities/Like" } }
+      },
+      {
+        "path": "/callTranslations/{callId}",
+        "definition": { "entityName": "CallTranslation", "schema": { "$ref": "#/backend/entities/CallTranslation" } }
+      },
+      {
+        "path": "/callTranslations/{callId}/segments/{segmentId}",
+        "definition": { "entityName": "TranslationSegment", "schema": { "$ref": "#/backend/entities/TranslationSegment" } }
       }
     ]
   }

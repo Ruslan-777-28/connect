@@ -182,3 +182,51 @@ export type Like = {
   type: LikeType;
   createdAt: Timestamp | any;
 };
+
+// --- Translation Bot Types ---
+
+export type TranslationParticipant = {
+  uid: string;
+  role: 'caller' | 'callee';
+  sourceLocale: string;
+  targetLocale: string;
+  captionsEnabled: boolean;
+  audioTranslationEnabled: boolean;
+};
+
+export type CallTranslation = {
+  id: string; // matches callId
+  callId: string;
+  enabled: boolean;
+  mode: 'captions_only' | 'voice_translation';
+  status: 'idle' | 'starting' | 'active' | 'error' | 'ended';
+  provider: 'azure_speech';
+  botStatus: 'not_joined' | 'joining' | 'joined' | 'processing' | 'failed' | 'left';
+  participants: Record<string, TranslationParticipant>;
+  lastError?: {
+    code: string | null;
+    message: string | null;
+    source: 'bot' | 'azure' | 'daily' | 'firestore' | null;
+  };
+  startedAt?: Timestamp | any;
+  activatedAt?: Timestamp | any;
+  endedAt?: Timestamp | any;
+  createdAt: Timestamp | any;
+  updatedAt: Timestamp | any;
+};
+
+export type TranslationSegment = {
+  id: string;
+  speakerUid: string;
+  speakerRole: 'caller' | 'callee';
+  sourceLocale: string;
+  targetLocale: string;
+  originalText: string;
+  translatedText: string;
+  isFinal: boolean;
+  sequence: number;
+  status: 'partial' | 'final' | 'error';
+  latencyMs: number | null;
+  emittedAt: Timestamp | any;
+  finalizedAt?: Timestamp | any;
+};

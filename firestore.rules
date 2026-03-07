@@ -85,7 +85,7 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
         allow update: if false;
-        allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+        allow delete: if isSignedIn() && request.resource.data.uid == request.auth.uid;
       }
     }
 
@@ -105,6 +105,7 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // ---------- Calls & Translations ----------
     match /calls/{callId} {
       function isCallParticipant() {
         return isSignedIn() && (
@@ -114,6 +115,23 @@ service cloud.firestore {
       }
       allow read: if isCallParticipant();
       allow create, update, delete: if false;
+    }
+
+    match /callTranslations/{callId} {
+      function isTranslationParticipant() {
+        return isSignedIn() && (
+          request.auth.uid in resource.data.participants
+        );
+      }
+      allow read: if isTranslationParticipant();
+      allow write: if false; // Only written by Translator Bot Service
+
+      match /segments/{segmentId} {
+        allow read: if isSignedIn() && (
+          get(/databases/$(database)/documents/callTranslations/$(callId)).data.participants[request.auth.uid] != null
+        );
+        allow write: if false; // Only written by Translator Bot Service
+      }
     }
     
     match /{document=**} {
