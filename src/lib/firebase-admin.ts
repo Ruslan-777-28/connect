@@ -1,8 +1,5 @@
-import * as admin from 'firebase-admin';
-
-if (!admin.apps.length) {
-  // Initialize on the server
-  admin.initializeApp();
-}
-
-export { admin };
+/**
+ * @fileoverview Точка входу для Firebase Admin.
+ * Посилається на структурований модуль ініціалізації.
+ */
+export * from './firebase/admin';
