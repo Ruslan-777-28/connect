@@ -9,14 +9,17 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@daily-co/daily-js": "^0.75.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "firebase-admin": "^12.7.0",
-    "microsoft-cognitiveservices-speech-sdk": "^1.42.0"
+    "microsoft-cognitiveservices-speech-sdk": "^1.42.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.1",
+    "@types/ws": "^8.5.12",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

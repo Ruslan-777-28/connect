@@ -45,4 +45,10 @@ export interface WorkerConfig {
 
   azureSpeechKey: string | null;
   azureSpeechRegion: string | null;
+  
+  dailyApiKey: string | null;
+  dailyBotName: string;
+  
+  audioSampleRate: number;
+  audioChannels: number;
 }
