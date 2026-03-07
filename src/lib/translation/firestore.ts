@@ -109,8 +109,8 @@ export function buildInitialTranslationParticipant(
 export function buildInitialTranslationDoc(
   params: BuildInitialTranslationDocParams,
 ): Omit<CallTranslationDoc, 'createdAt' | 'updatedAt'> & {
-  createdAt: any;
-  updatedAt: any;
+  createdAt: null;
+  updatedAt: null;
 } {
   if (!params.participants.length) {
     throw new Error('buildInitialTranslationDoc requires at least one participant');
@@ -158,8 +158,8 @@ export function buildInitialTranslationDoc(
       ...INITIAL_TRANSLATION_METRICS,
     },
 
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    createdAt: null,
+    updatedAt: null,
   };
 }
 

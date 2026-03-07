@@ -65,6 +65,7 @@ export async function POST(
 
       await translationRef.set({
         ...initialDoc,
+        createdAt: FieldValue.serverTimestamp(),
         startedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         status: 'starting',
