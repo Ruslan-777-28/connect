@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { createRecognizer } from '@/lib/speech/recognizer';
 import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
@@ -14,6 +14,10 @@ interface UseSpeechRecognizerParams {
 
 /**
  * Hook to manage the lifecycle of Azure Speech Recognition during a call.
+ * Implements a hybrid phrase buffering strategy:
+ * 1. Intermediate results (recognizing) are sent to onRecognizing for local preview.
+ * 2. Final results (recognized) are buffered for ~1.8s or until punctuation is found
+ *    to create meaningful sentences for better translation and fewer Firestore writes.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -22,6 +26,35 @@ export function useSpeechRecognizer({
   onRecognizing
 }: UseSpeechRecognizerParams) {
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
+  const bufferRef = useRef("");
+  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Memoized function to flush the buffer and send the complete phrase
+  const flushBuffer = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    const text = bufferRef.current.trim();
+    if (!text) return;
+
+    bufferRef.current = "";
+    onRecognized(text);
+    
+    // Clear preview when a final segment is confirmed and buffered
+    if (onRecognizing) {
+      onRecognizing("");
+    }
+  }, [onRecognized, onRecognizing]);
+
+  // Helper to schedule a buffer flush after a period of silence
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = setTimeout(() => {
+      flushBuffer();
+    }, 1800); // 1.8 seconds of silence before flushing
+  }, [flushBuffer]);
 
   useEffect(() => {
     if (!enabled || !sourceLocale) {
@@ -29,6 +62,8 @@ export function useSpeechRecognizer({
         recognizerRef.current.stopContinuousRecognitionAsync();
         recognizerRef.current = null;
       }
+      // Ensure we flush any remaining text when stopping
+      flushBuffer();
       return;
     }
 
@@ -49,9 +84,18 @@ export function useSpeechRecognizer({
         activeRecognizer.recognized = (_: any, event: any) => {
           if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
             const text = event.result.text;
-            // Filter out very short phrases (noise, filler sounds) to avoid unnecessary translations
-            if (text && text.trim().length >= 3) {
-              onRecognized(text);
+            if (!text || text.trim().length < 2) return;
+
+            // Accumulate chunks in the buffer
+            bufferRef.current += (bufferRef.current ? " " : "") + text.trim();
+
+            // Optimization: If the phrase ends with terminal punctuation, flush immediately.
+            // This makes the UI feel more responsive for natural sentence endings.
+            if (/[.?!]$/.test(text.trim())) {
+              flushBuffer();
+            } else {
+              // Otherwise, wait for a pause to see if the speaker continues the thought
+              scheduleFlush();
             }
           }
         };
@@ -79,6 +123,7 @@ export function useSpeechRecognizer({
         activeRecognizer.stopContinuousRecognitionAsync();
         recognizerRef.current = null;
       }
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
-  }, [enabled, sourceLocale, onRecognized, onRecognizing]);
+  }, [enabled, sourceLocale, onRecognized, onRecognizing, flushBuffer, scheduleFlush]);
 }

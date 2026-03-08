@@ -38,6 +38,7 @@ export default function CallRoomPage() {
   const [callData, setCallData] = useState<Call | null>(null);
   const [status, setStatus] = useState<Call['status'] | 'unknown'>('unknown');
   const [showCaptions, setShowCaptions] = useState(true);
+  const [localPreviewText, setLocalPreviewText] = useState("");
 
   // Translation Layer
   const { translation, segments, status: translationStatus } = useCallTranslation(callId);
@@ -102,6 +103,7 @@ export default function CallRoomPage() {
     enabled: !!(callData?.translationEnabled && status === 'accepted' && myConfig),
     sourceLocale: myConfig?.sourceLocale || 'uk-UA',
     onRecognized: handleRecognized,
+    onRecognizing: setLocalPreviewText,
   });
 
   useEffect(() => {
@@ -244,6 +246,7 @@ export default function CallRoomPage() {
           )}>
             <TranslatedCaptionsPanel 
               segments={segments} 
+              localPreview={localPreviewText}
               className="h-full w-full"
             />
           </div>

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -7,13 +8,14 @@ import { useEffect, useRef } from 'react';
 
 interface TranslatedCaptionsPanelProps {
   segments: TranslationSegmentDoc[] | null;
+  localPreview?: string;
   className?: string;
 }
 
-export function TranslatedCaptionsPanel({ segments, className }: TranslatedCaptionsPanelProps) {
+export function TranslatedCaptionsPanel({ segments, localPreview, className }: TranslatedCaptionsPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new segments arrive
+  // Auto-scroll to bottom when new segments arrive or local preview updates
   useEffect(() => {
     if (viewportRef.current) {
       const scrollContainer = viewportRef.current.querySelector('[data-radix-scroll-area-viewport]');
@@ -21,9 +23,11 @@ export function TranslatedCaptionsPanel({ segments, className }: TranslatedCapti
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       }
     }
-  }, [segments]);
+  }, [segments, localPreview]);
 
-  if (!segments || segments.length === 0) {
+  const hasContent = (segments && segments.length > 0) || !!localPreview;
+
+  if (!hasContent) {
     return (
       <div className={cn("flex items-center justify-center text-white/40 text-[10px] italic p-4 bg-black/60 rounded-xl border border-white/5", className)}>
         Очікування мовлення...
@@ -35,7 +39,7 @@ export function TranslatedCaptionsPanel({ segments, className }: TranslatedCapti
     <div ref={viewportRef} className={cn("relative group", className)}>
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl">
         <div className="p-4 space-y-4">
-          {segments.slice(-20).map((segment, idx) => (
+          {segments?.slice(-20).map((segment, idx) => (
             <div 
               key={`${segment.speakerUid}-${segment.sequence}-${idx}`} 
               className={cn(
@@ -68,6 +72,23 @@ export function TranslatedCaptionsPanel({ segments, className }: TranslatedCapti
               )}
             </div>
           ))}
+
+          {/* Local Preview (Me speaking) */}
+          {localPreview && (
+            <div className="flex flex-col gap-1 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-tighter bg-primary text-primary-foreground">
+                  Ви
+                </span>
+                <span className="text-[8px] text-yellow-500 font-bold animate-pulse tracking-widest uppercase">
+                  Розпізнавання...
+                </span>
+              </div>
+              <p className="text-sm font-medium text-white leading-snug italic">
+                {localPreview}
+              </p>
+            </div>
+          )}
         </div>
       </ScrollArea>
       <div className="absolute top-2 right-2 flex gap-1">
