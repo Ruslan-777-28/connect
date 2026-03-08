@@ -76,6 +76,9 @@ export type CommunicationRequest = {
   // Translation flags
   translationEnabled?: boolean;
   transcriptEnabled?: boolean;
+  // Transcript results
+  transcriptUrl?: string;
+  transcriptGenerated?: boolean;
 };
 
 export type DigitalProduct = {
@@ -164,10 +167,6 @@ export type Call = CommunicationRequest & {
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
   caller?: UserProfile;
-  translationEnabled?: boolean;
-  transcriptEnabled?: boolean;
-  transcriptUrl?: string;
-  transcriptGenerated?: boolean;
 };
 
 export type Post = {

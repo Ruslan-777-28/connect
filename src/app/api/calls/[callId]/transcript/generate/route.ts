@@ -5,8 +5,8 @@ import { getStorage } from 'firebase-admin/storage';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
- * Generates a transcript for a call session, uploads it to Storage,
- * and updates the call translation document.
+ * Generates a rich transcript for a call session (Original + Translation),
+ * uploads it to Storage, and updates the call translation document.
  */
 export async function POST(
   request: NextRequest,
@@ -29,7 +29,7 @@ export async function POST(
 
     const translationData = translationSnap.data()!;
     
-    // 2. Fetch all segments
+    // 2. Fetch all segments ordered by sequence
     const segmentsSnap = await translationRef
       .collection('segments')
       .orderBy('sequence', 'asc')
@@ -39,24 +39,26 @@ export async function POST(
       return NextResponse.json({ ok: true, message: 'No segments found to generate transcript' });
     }
 
-    // 3. Format the transcript text
+    // 3. Format the transcript text: [Time] Name (Role) | Original: ... | Translation: ...
     const transcriptLines: string[] = [];
     const participants = translationData.participants || {};
 
     segmentsSnap.forEach((doc) => {
       const seg = doc.data();
-      const speakerName = seg.speakerDisplayName || participants[seg.speakerUid]?.displayName || 'Unknown';
+      const speakerName = seg.speakerDisplayName || participants[seg.speakerUid]?.displayName || 'User';
       const role = seg.speakerRole === 'caller' ? 'Client' : 'Expert';
+      const time = seg.emittedAt?.toDate?.()?.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) || '--:--';
       
-      transcriptLines.push(`[${speakerName} (${role})]`);
+      transcriptLines.push(`[${time}] ${speakerName} (${role})`);
       transcriptLines.push(`Original (${seg.sourceLocale}): ${seg.originalText}`);
       transcriptLines.push(`Translation (${seg.targetLocale}): ${seg.translatedText}`);
-      transcriptLines.push('---');
+      transcriptLines.push('------------------------------------------');
     });
 
-    const transcriptContent = `Call Transcript - Session ${callId}\n` +
-      `Generated at: ${new Date().toLocaleString()}\n` +
-      `==========================================\n\n` +
+    const transcriptContent = `CALL TRANSCRIPT - SESSION ${callId}\n` +
+      `Generated at: ${new Date().toLocaleString('uk-UA')}\n` +
+      `Mode: Live Translation (Original + Translation)\n` +
+      `==================================================\n\n` +
       transcriptLines.join('\n');
 
     // 4. Upload to Firebase Storage
@@ -68,32 +70,29 @@ export async function POST(
     await file.save(transcriptContent, {
       contentType: 'text/plain',
       metadata: {
-        firebaseStorageDownloadTokens: callId, // Simplified for internal access
+        firebaseStorageDownloadTokens: callId,
       },
     });
 
-    // Make the file publicly accessible via a signed URL or predictable URL format if needed
-    // For this MVP, we'll store the path and use a signed URL strategy in the UI
+    // Make the file accessible via signed URL
     const [url] = await file.getSignedUrl({
       action: 'read',
       expires: '03-09-2491', // Long term expiration
     });
 
-    // 5. Update Firestore
-    await translationRef.update({
+    // 5. Update Firestore records
+    const updateData = {
       transcriptUrl: url,
       transcriptGenerated: true,
       updatedAt: new Date(),
-    });
+    };
 
-    // Also update the main call document if it exists
+    await translationRef.update(updateData);
+
     const callRef = adminDb.collection('calls').doc(callId);
     const callSnap = await callRef.get();
     if (callSnap.exists) {
-      await callRef.update({
-        transcriptUrl: url,
-        transcriptGenerated: true,
-      });
+      await callRef.update(updateData);
     }
 
     return NextResponse.json({
