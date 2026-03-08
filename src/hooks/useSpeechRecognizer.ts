@@ -49,7 +49,8 @@ export function useSpeechRecognizer({
         activeRecognizer.recognized = (_: any, event: any) => {
           if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
             const text = event.result.text;
-            if (text) {
+            // Filter out very short phrases (noise, filler sounds) to avoid unnecessary translations
+            if (text && text.trim().length >= 3) {
               onRecognized(text);
             }
           }

@@ -19,6 +19,15 @@ export async function createRecognizer(locale: string) {
 
   speechConfig.speechRecognitionLanguage = locale;
 
+  // Enable TrueText for punctuation, capitalization and sentence normalization
+  speechConfig.setProperty(
+    'SpeechServiceResponse_PostProcessingOption',
+    'TrueText'
+  );
+
+  // Enable dictation mode for more natural handling of pauses and phrasing
+  speechConfig.enableDictation();
+
   // Use the default microphone input for recording
   const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
 
