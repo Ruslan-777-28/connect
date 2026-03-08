@@ -1,4 +1,3 @@
-
 import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**

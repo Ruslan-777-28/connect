@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -76,15 +75,14 @@ export default function CallRoomPage() {
     await endCallClient(app, callId, 'ended');
   }, [app, callId]);
 
-  // 1. Setup Speech Recognition (Batch 3.1 focusing on console log)
+  // Setup Speech Recognition
   const myProfileId = user?.uid;
   const myConfig = translation?.participants?.[myProfileId || ''];
   
   const handleRecognized = useCallback(async (text: string) => {
-    // В Batch 3.1 ми просто логуємо текст у консоль
     console.log(`[CallRoom] Recognized phrase for ${myProfileId}: ${text}`);
     
-    // Тимчасово залишимо виклик API, але головне - консоль
+    // Send to translation pipeline
     try {
       await fetch('/api/translation/segment', {
         method: 'POST',
