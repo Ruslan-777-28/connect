@@ -29,7 +29,7 @@ export type UserProfile = {
   email: string;
   bio?: string;
   avatarUrl?: string;
-  preferredLanguage?: string; // BCP-47 locale (uk-UA, en-US, etc.)
+  preferredLanguage?: string; // BCP-47 locale (uk-UA, en-US, pl-PL, etc.)
   balance: number;
   held: number;
   currency?: 'COIN' | string;
@@ -167,6 +167,7 @@ export type Call = CommunicationRequest & {
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
   caller?: UserProfile;
+  callerName?: string;
 };
 
 export type Post = {

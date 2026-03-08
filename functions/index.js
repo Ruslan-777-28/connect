@@ -507,9 +507,9 @@ exports.startCall = onCall(
       const receiverId = request.data?.receiverId;
       const offerId = request.data?.offerId;
       
-      // Batch 1 flags
-      const translationEnabled = !!request.data?.translationEnabled;
-      const transcriptEnabled = !!request.data?.transcriptEnabled;
+      // Batch 1 flags: support both callWithTranslator and saveTranscript names
+      const translationEnabled = !!(request.data?.translationEnabled || request.data?.callWithTranslator);
+      const transcriptEnabled = !!(request.data?.transcriptEnabled || request.data?.saveTranscript);
 
       if (!receiverId || !offerId) {
         throw new HttpsError("invalid-argument", "Missing data");
@@ -583,7 +583,7 @@ exports.acceptCall = onCall(
     const callId = request.data?.callId;
     
     // Batch 1: receiver can choose to accept with translator
-    const translationEnabled = !!request.data?.translationEnabled;
+    const translationEnabled = !!(request.data?.translationEnabled || request.data?.acceptWithTranslator);
     
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);

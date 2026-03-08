@@ -45,7 +45,7 @@ export function CallManager() {
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
   
-  // Batch 1: Receiver choice
+  // Batch 1: Receiver choice for translator
   const [acceptWithTranslator, setAcceptWithTranslator] = useState(false);
   
   const busyCallIdRef = useRef<string | null>(null);
@@ -110,7 +110,7 @@ export function CallManager() {
       const topRingingCall = ringingCalls[0];
       setIncomingCall(topRingingCall || null);
       
-      // Auto-set translator preference if caller requested it
+      // Auto-set translator preference if caller requested it, but receiver can change it
       if (topRingingCall) {
         setAcceptWithTranslator(!!topRingingCall.translationEnabled);
       }
@@ -129,10 +129,10 @@ export function CallManager() {
     setBusyCallId(callId);
     try {
       const functions = getFunctions(app, 'us-central1');
-      const acceptCall = httpsCallable<{ callId: string, translationEnabled?: boolean }, AcceptCallResult>(functions, 'acceptCall');
+      const acceptCall = httpsCallable<{ callId: string, acceptWithTranslator?: boolean }, AcceptCallResult>(functions, 'acceptCall');
       const res = await acceptCall({ 
         callId, 
-        translationEnabled: acceptWithTranslator 
+        acceptWithTranslator 
       });
       
       if (res.data?.token && res.data?.roomUrl) {
@@ -175,7 +175,7 @@ export function CallManager() {
 
   return (
     <>
-      {/* Incoming Call Modal */}
+      {/* Incoming Call Modal - Batch 1 updated with Translator button logic */}
       {incomingCall && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
           <Card className="w-full max-w-[320px] shadow-2xl border-primary/20">
@@ -204,30 +204,32 @@ export function CallManager() {
                   </Label>
                 </div>
                 {incomingCall.translationEnabled && (
-                  <p className="text-[10px] text-muted-foreground italic">
-                    * Автор запиту попросив підключити AI-перекладач
+                  <p className="text-[10px] text-muted-foreground italic text-center">
+                    * Співрозмовник просить підключити AI-перекладач
                   </p>
                 )}
               </div>
             </CardContent>
-            <CardFooter className="flex gap-3 pt-2">
-              <Button 
-                variant="destructive" 
-                className="flex-1 h-12 rounded-xl"
-                onClick={handleDecline}
-                disabled={!!busyCallId}
-              >
-                {busyCallId ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneOff className="mr-2 h-4 w-4" />}
-                Відхилити
-              </Button>
-              <Button 
-                className="flex-1 h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white"
-                onClick={handleAccept}
-                disabled={!!busyCallId}
-              >
-                {busyCallId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="mr-2 h-4 w-4" />}
-                Прийняти
-              </Button>
+            <CardFooter className="flex flex-col gap-2 pt-2">
+              <div className="flex w-full gap-2">
+                <Button 
+                  variant="destructive" 
+                  className="flex-1 h-12 rounded-xl"
+                  onClick={handleDecline}
+                  disabled={!!busyCallId}
+                >
+                  <PhoneOff className="mr-2 h-4 w-4" />
+                  Відхилити
+                </Button>
+                <Button 
+                  className="flex-1 h-12 rounded-xl bg-green-600 hover:bg-green-700 text-white"
+                  onClick={handleAccept}
+                  disabled={!!busyCallId}
+                >
+                  {busyCallId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4 mr-2" />}
+                  {acceptWithTranslator ? 'З перекладачем' : 'Прийняти'}
+                </Button>
+              </div>
             </CardFooter>
           </Card>
         </div>

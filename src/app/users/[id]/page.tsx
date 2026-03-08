@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { doc, collection, query, where, orderBy } from 'firebase/firestore';
 import { useFirestore, useDoc, useMemoFirebase, useUser, useFirebaseApp, useCollection } from '@/firebase';
@@ -53,7 +53,7 @@ export default function UserProfilePage() {
   const [questionText, setQuestionText] = useState('');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   
-  const [withTranslator, setWithTranslator] = useState(true);
+  const [callWithTranslator, setCallWithTranslator] = useState(true);
   const [saveTranscript, setSaveTranscript] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -150,8 +150,8 @@ export default function UserProfilePage() {
     setIsCalling(true);
     try {
       const { callId } = await startVideoCall(app, userProfile.id, callOfferId, {
-        translationEnabled: withTranslator,
-        transcriptEnabled: saveTranscript
+        callWithTranslator,
+        saveTranscript
       });
       router.push(`/call/${callId}`);
     } catch (error: any) {
@@ -299,7 +299,7 @@ export default function UserProfilePage() {
         </section>
       </div>
 
-      {/* Video Call Initiation Modal */}
+      {/* Video Call Initiation Modal - Batch 1 updated names */}
       <Dialog open={!!callOfferId} onOpenChange={(open) => !open && setCallOfferId(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -308,7 +308,7 @@ export default function UserProfilePage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center space-x-3 rounded-lg border p-3">
-              <Checkbox id="translator-init" checked={withTranslator} onCheckedChange={(val) => setWithTranslator(!!val)} />
+              <Checkbox id="translator-init" checked={callWithTranslator} onCheckedChange={(val) => setCallWithTranslator(!!val)} />
               <Label htmlFor="translator-init" className="flex flex-1 items-center gap-2 cursor-pointer font-semibold text-primary">
                 <Globe className="h-4 w-4" /> Приєднати AI-перекладач
               </Label>

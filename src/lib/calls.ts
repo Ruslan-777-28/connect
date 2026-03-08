@@ -26,7 +26,7 @@ export async function endCallClient(
     >(functions, 'endCall');
     await endCall({ callId, reason });
 
-    // PHASE 5: Trigger transcript generation after call ends
+    // Trigger transcript generation after call ends if enabled
     fetch(`/api/calls/${callId}/transcript/generate`, { method: 'POST' }).catch(console.error);
     
   } catch (error) {
@@ -38,7 +38,7 @@ export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string,
   offerId: string,
-  options: { translationEnabled?: boolean; transcriptEnabled?: boolean } = {}
+  options: { callWithTranslator?: boolean; saveTranscript?: boolean } = {}
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
@@ -46,8 +46,8 @@ export async function startVideoCall(
     const startCall = httpsCallable<{ 
       receiverId: string, 
       offerId: string,
-      translationEnabled?: boolean,
-      transcriptEnabled?: boolean
+      callWithTranslator?: boolean,
+      saveTranscript?: boolean
     }, StartCallResult>(
       functions,
       'startCall'
@@ -56,8 +56,8 @@ export async function startVideoCall(
     const res = await startCall({ 
       receiverId, 
       offerId, 
-      translationEnabled: options.translationEnabled,
-      transcriptEnabled: options.transcriptEnabled
+      callWithTranslator: options.callWithTranslator,
+      saveTranscript: options.saveTranscript
     });
     const data = res.data;
 
