@@ -9,7 +9,7 @@ import { useFirebaseApp, useFirestore, useUser } from '@/firebase';
 import { endCallClient } from '@/lib/calls';
 import type { Call } from '@/lib/types';
 import { Button } from '@/components/ui/button';
-import { PhoneOff, Loader2, MessageSquareQuote, ChevronRight, ChevronLeft } from 'lucide-react';
+import { PhoneOff, Loader2, MessageSquareQuote } from 'lucide-react';
 import { useCallTranslation } from '@/hooks/useCallTranslation';
 import { TranslationStatusBadge } from '@/components/call/TranslationStatusBadge';
 import { TranslatedCaptionsPanel } from '@/components/call/TranslatedCaptionsPanel';
@@ -40,7 +40,7 @@ export default function CallRoomPage() {
   const [showCaptions, setShowCaptions] = useState(true);
   const [localPreviewText, setLocalPreviewText] = useState("");
 
-  // Translation Layer
+  // 1. Hook into the translation state and segments
   const { translation, segments, status: translationStatus } = useCallTranslation(callId);
 
   const token = useMemo(() => sessionStorage.getItem(`dailyToken:${callId}`), [callId]);
@@ -77,13 +77,14 @@ export default function CallRoomPage() {
     await endCallClient(app, callId, 'ended');
   }, [app, callId]);
 
-  // Speech Recognition Handling
+  // 2. Setup Speech Recognition
   const myProfileId = user?.uid;
   const myConfig = translation?.participants?.[myProfileId || ''];
   
   const handleRecognized = useCallback(async (text: string) => {
     if (!myProfileId || !callId) return;
     
+    // Send recognized text to the translation pipeline
     try {
       await fetch('/api/translation/segment', {
         method: 'POST',
@@ -99,6 +100,7 @@ export default function CallRoomPage() {
     }
   }, [callId, myProfileId]);
 
+  // The recognizer only runs if translation is enabled and we have our config (source locale)
   useSpeechRecognizer({
     enabled: !!(callData?.translationEnabled && status === 'accepted' && myConfig),
     sourceLocale: myConfig?.sourceLocale || 'uk-UA',
@@ -119,12 +121,13 @@ export default function CallRoomPage() {
         const data = snap.data() as Call;
         setCallData(data);
         setStatus(data.status ?? 'unknown');
+        
         if (data.status === 'ended') {
           await leaveAndDestroy();
           hardExitToHome();
         }
 
-        // AUTO-START Translation session if enabled and accepted
+        // AUTO-START Translation session if enabled and call is accepted
         if (data.status === 'accepted' && data.translationEnabled && translationStatus === 'idle') {
           fetch(`/api/calls/${callId}/translation/start`, { method: 'POST' }).catch(console.error);
         }
@@ -238,7 +241,7 @@ export default function CallRoomPage() {
           <div ref={containerRef} className="h-full w-full" />
         </div>
 
-        {/* Captions Panel Overlay/Sidebar */}
+        {/* Captions Panel Overlay */}
         {translation?.enabled && showCaptions && (
           <div className={cn(
             "absolute right-4 bottom-24 top-20 w-full max-w-[320px] z-10 transition-all duration-500 ease-in-out",

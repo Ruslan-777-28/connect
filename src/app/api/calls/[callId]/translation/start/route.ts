@@ -7,6 +7,10 @@ import { buildInitialTranslationDoc } from '@/lib/translation/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 import { startWorkerTranslationSession } from '@/lib/translation/worker-client';
 
+/**
+ * API route to initialize a translation session for a specific call.
+ * It fetches participant language preferences directly from their profiles.
+ */
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ callId: string }> },
@@ -18,32 +22,33 @@ export async function POST(
       return NextResponse.json({ error: 'Missing callId' }, { status: 400 });
     }
 
-    // 1. Fetch the call document
+    // 1. Fetch the call document to get participant IDs and flags
     const callSnap = await adminDb.collection('calls').doc(callId).get();
     if (!callSnap.exists) {
       return NextResponse.json({ error: 'Call not found' }, { status: 404 });
     }
-    const call = callSnap.data();
-    const { callerId, receiverId, roomName, roomUrl } = call;
+    const call = callSnap.data()!;
+    const { callerId, receiverId, roomName, roomUrl, translationEnabled, transcriptEnabled } = call;
 
-    // 2. Fetch profiles to get preferredLanguage
+    // 2. Fetch user profiles to get their preferred languages
     const [callerSnap, receiverSnap] = await Promise.all([
       adminDb.collection('users').doc(callerId).get(),
       adminDb.collection('users').doc(receiverId).get(),
     ]);
 
-    const caller = callerSnap.data() || {};
-    const receiver = receiverSnap.data() || {};
+    const callerData = callerSnap.data() || {};
+    const receiverData = receiverSnap.data() || {};
 
-    const callerLang = caller.preferredLanguage || 'uk-UA';
-    const receiverLang = receiver.preferredLanguage || 'en-US';
+    // Determine locales with fallbacks
+    const callerLang = callerData.preferredLanguage || 'uk-UA';
+    const receiverLang = receiverData.preferredLanguage || 'en-US';
 
-    // 3. Form participants map based on server-side profiles
+    // 3. Construct participants array for the helper
     const participants = [
       {
         uid: callerId,
         role: 'caller' as const,
-        displayName: caller.name || 'Caller',
+        displayName: callerData.name || 'Caller',
         sourceLocale: callerLang,
         targetLocale: receiverLang, 
         captionsEnabled: true,
@@ -51,7 +56,7 @@ export async function POST(
       {
         uid: receiverId,
         role: 'callee' as const,
-        displayName: receiver.name || 'Receiver',
+        displayName: receiverData.name || 'Receiver',
         sourceLocale: receiverLang,
         targetLocale: callerLang,
         captionsEnabled: true,
@@ -59,28 +64,28 @@ export async function POST(
     ];
 
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
-    const existingSnap = await translationRef.get();
+    
+    // 4. Build and save the translation master document
+    const initialDoc = buildInitialTranslationDoc({
+      callId,
+      callStatus: call.status ?? 'accepted',
+      roomName: roomName ?? null,
+      dailyRoomUrl: roomUrl ?? null,
+      participants,
+    });
 
-    if (!existingSnap.exists) {
-      const initialDoc = buildInitialTranslationDoc({
-        callId,
-        callStatus: call.status ?? 'accepted',
-        roomName: roomName ?? null,
-        dailyRoomUrl: roomUrl ?? null,
-        participants,
-      });
+    await translationRef.set({
+      ...initialDoc,
+      enabled: translationEnabled ?? true,
+      transcriptEnabled: transcriptEnabled ?? false,
+      createdAt: FieldValue.serverTimestamp(),
+      startedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      status: 'starting',
+      botStatus: 'joining',
+    });
 
-      await translationRef.set({
-        ...initialDoc,
-        createdAt: FieldValue.serverTimestamp(),
-        startedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-        status: 'starting',
-        botStatus: 'joining',
-      });
-    }
-
-    // Start the worker (Mock or real)
+    // 5. Notify the background worker (if configured)
     try {
       await startWorkerTranslationSession({
         callId,
@@ -89,7 +94,7 @@ export async function POST(
         participants,
       });
     } catch (workerError) {
-      console.error('Worker failed to start, but continuing session creation:', workerError);
+      console.error('Worker failed to start, but session document created:', workerError);
     }
 
     const savedSnap = await translationRef.get();
