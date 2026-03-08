@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -88,6 +89,11 @@ export default function CallRoomPage() {
           await leaveAndDestroy();
           hardExitToHome();
         }
+
+        // AUTO-START Translation session if enabled and accepted
+        if (data.status === 'accepted' && data.translationEnabled && translationStatus === 'idle') {
+          fetch(`/api/calls/${callId}/translation/start`, { method: 'POST' }).catch(console.error);
+        }
       },
       async () => {
         setLoading(false);
@@ -96,7 +102,7 @@ export default function CallRoomPage() {
       }
     );
     return () => unsub();
-  }, [callId, firestore, hardExitToHome, leaveAndDestroy]);
+  }, [callId, firestore, hardExitToHome, leaveAndDestroy, translationStatus]);
 
   useEffect(() => {
     if (!urlWithToken) {

@@ -73,6 +73,9 @@ export type CommunicationRequest = {
   // Scheduled call specific fields
   scheduledStart?: Timestamp | any;
   scheduledEnd?: Timestamp | any;
+  // Translation flags
+  translationEnabled?: boolean;
+  transcriptEnabled?: boolean;
 };
 
 export type DigitalProduct = {

@@ -342,7 +342,7 @@ export default function UserProfilePage() {
               offers={scheduledOffers} 
             />
           </DialogContent>
-        </Dialog>
+        )}
       )}
     </div>
   );
