@@ -1,3 +1,4 @@
+
 import type { Timestamp, DocumentData } from 'firebase/firestore';
 
 export type TranslationProvider = 'azure_speech';
@@ -17,7 +18,8 @@ export type TranslationBotStatus =
   | 'joined'
   | 'processing'
   | 'failed'
-  | 'left';
+  | 'left'
+  | 'disabled';
 
 export type TranslationSegmentStatus = 'partial' | 'final' | 'error';
 
@@ -83,6 +85,8 @@ export interface CallTranslationDoc {
   participants: Record<string, TranslationParticipantState>;
 
   languagePairKey: string;
+  
+  nextSequence: number;
 
   startedAt: Timestamp | null;
   activatedAt: Timestamp | null;

@@ -1,3 +1,4 @@
+
 import {
   collection,
   doc,
@@ -146,6 +147,7 @@ export function buildInitialTranslationDoc(
     participants: participantMap,
 
     languagePairKey,
+    nextSequence: 1,
 
     startedAt: null,
     activatedAt: null,

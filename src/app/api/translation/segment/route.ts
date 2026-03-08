@@ -17,7 +17,7 @@ async function translateText(text: string, targetLocale: string): Promise<string
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  const to = targetLocale.split('-')[0];
+  const to = targetLocale.split('-')[0]; // Extract 'uk' from 'uk-UA'
 
   try {
     const res = await fetch(`${endpoint}&to=${to}`, {
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Server-side translation first
+    // 1. Fetch translation context
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const translationSnap = await translationRef.get();
 
@@ -62,25 +62,27 @@ export async function POST(request: NextRequest) {
     }
 
     const translationData = translationSnap.data()!;
-    const speakerData = translationData.participants?.[speakerId];
+    const participants = translationData.participants || {};
+    const speakerData = participants[speakerId];
 
     if (!speakerData) {
       return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
     }
 
-    // 1. Perform translation
+    // 2. Perform translation
     const translatedText = await translateText(text, speakerData.targetLocale);
 
-    // 2. Transactional Write for Sequence + Metrics
+    // 3. Transactional Write for Sequence + Metrics
     const result = await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
       
-      const currentMetrics = freshSnap.data()?.metrics || { totalSegments: 0 };
-      const nextSequence = (currentMetrics.totalSegments || 0) + 1;
+      const data = freshSnap.data()!;
+      // Use nextSequence field or fallback to totalSegments + 1
+      const currentSequence = data.nextSequence || (data.metrics?.totalSegments || 0) + 1;
 
       const segmentsRef = translationRef.collection('segments');
-      const segmentDocRef = segmentsRef.doc(`seg_${nextSequence.toString().padStart(6, '0')}`);
+      const segmentDocRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
 
       const segmentData = {
         callId,
@@ -92,7 +94,7 @@ export async function POST(request: NextRequest) {
         originalText: text,
         translatedText,
         isFinal: true,
-        sequence: nextSequence,
+        sequence: currentSequence,
         emittedAt: FieldValue.serverTimestamp(),
         finalizedAt: FieldValue.serverTimestamp(),
         provider: 'azure_speech',
@@ -101,13 +103,14 @@ export async function POST(request: NextRequest) {
 
       transaction.set(segmentDocRef, segmentData);
       transaction.update(translationRef, {
-        'metrics.totalSegments': nextSequence,
+        nextSequence: currentSequence + 1,
+        'metrics.totalSegments': currentSequence,
         'metrics.finalSegments': FieldValue.increment(1),
         lastSegmentAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      return { translatedText, sequence: nextSequence };
+      return { translatedText, sequence: currentSequence };
     });
 
     return NextResponse.json({ ok: true, ...result });

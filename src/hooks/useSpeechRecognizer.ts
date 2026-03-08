@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -12,8 +13,12 @@ interface UseSpeechRecognizerParams {
 }
 
 /**
- * Хук для керування життєвим циклом розпізнавання мовлення під час дзвінка.
- * Включає гібридну буферизацію фраз (1.8с).
+ * Хук для керування життєвим циклом розпізнавання мовлення під час дзвінка з буферизацією.
+ * 
+ * Логіка Batch 3.2:
+ * 1. recognizing -> тільки локальне preview
+ * 2. recognized -> додає у bufferRef
+ * 3. flush -> якщо .?! або 1.8с тиші
  */
 export function useSpeechRecognizer({
   enabled,
@@ -80,13 +85,13 @@ export function useSpeechRecognizer({
     if (!enabled || !sourceLocale || isStartingRef.current) return;
     
     isStartingRef.current = true;
-    console.info('[SpeechRecognizer] Запуск сесії розпізнавання...', { locale: sourceLocale });
+    console.info('[SpeechRecognizer] Запуск сесії...', { locale: sourceLocale });
 
     try {
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // Проміжне розпізнавання (preview)
+      // 1. recognizing -> Тільки локальний Preview
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
         if (text && text.length >= 2 && onRecognizing) {
@@ -94,7 +99,7 @@ export function useSpeechRecognizer({
         }
       };
 
-      // Подія розпізнаної фрази (Chunk)
+      // 2. recognized -> Накопичення в буфер
       activeRecognizer.recognized = (_: any, event: any) => {
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
           const text = event.result.text;
@@ -112,38 +117,35 @@ export function useSpeechRecognizer({
       };
 
       activeRecognizer.canceled = (s: any, e: any) => {
-        console.warn('[SpeechRecognizer] Сесію скасовано:', e.reason, e.errorDetails);
-        isStartingRef.current = false;
-      };
-
-      activeRecognizer.sessionStopped = () => {
-        console.info('[SpeechRecognizer] Сесію завершено Azure');
+        console.warn('[SpeechRecognizer] Сесію скасовано:', e.reason);
         isStartingRef.current = false;
       };
 
       activeRecognizer.startContinuousRecognitionAsync(
         () => {
-          console.info('[SpeechRecognizer] Розпізнавання активне');
+          console.info('[SpeechRecognizer] Активно');
           isStartingRef.current = false;
         },
         (err) => {
-          console.error('[SpeechRecognizer] Помилка старту:', err);
+          console.error('[SpeechRecognizer] Помилка:', err);
           isStartingRef.current = false;
         }
       );
     } catch (err) {
-      console.error('[SpeechRecognizer] Помилка ініціалізації:', err);
+      console.error('[SpeechRecognizer] Init failed:', err);
       isStartingRef.current = false;
     }
   }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
 
   useEffect(() => {
-    // Force stop before starting a new one
-    stopRecognizer();
-
-    if (enabled) {
-      startRecognizer();
-    }
+    // Restart logic for locale changes or enabling
+    const restart = async () => {
+      await stopRecognizer();
+      if (enabled) {
+        startRecognizer();
+      }
+    };
+    restart();
 
     return () => {
       stopRecognizer();
