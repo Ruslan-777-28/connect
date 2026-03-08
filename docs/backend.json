@@ -51,8 +51,10 @@
         "completedAt": { "type": "string", "format": "date-time" },
         "lastMessageAt": { "type": "string", "format": "date-time" },
         "lastMessagePreview": { "type": "string" },
-        "translationEnabled": { "type": "boolean" },
-        "transcriptEnabled": { "type": "boolean" }
+        "translationEnabled": { "type": "boolean", "default": false },
+        "transcriptEnabled": { "type": "boolean", "default": false },
+        "transcriptUrl": { "type": "string", "format": "uri" },
+        "transcriptGenerated": { "type": "boolean", "default": false }
       }
     },
     "CommunicationOffer": {

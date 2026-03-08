@@ -14,7 +14,9 @@ interface UseSpeechRecognizerParams {
 
 /**
  * Hook to manage the lifecycle of Azure Speech Recognition during a call.
- * PHASE 4: Production Hardening - Reconnection, Watchdog, and Structured Logging.
+ * Implements a hybrid buffering strategy:
+ * 1. Low-latency local preview (recognizing)
+ * 2. Smart buffering for final segments (recognized) to improve translation and save writes.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -38,7 +40,10 @@ export function useSpeechRecognizer({
     }
 
     const text = bufferRef.current.trim();
-    if (!text) return;
+    if (!text || text.length < 2) {
+      bufferRef.current = "";
+      return;
+    }
 
     console.debug('[SpeechRecognizer] Flushing buffer:', { textLength: text.length });
     bufferRef.current = "";
@@ -53,7 +58,7 @@ export function useSpeechRecognizer({
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     flushTimerRef.current = setTimeout(() => {
       flushBuffer();
-    }, 1800);
+    }, 1800); // 1.8 seconds silence trigger
   }, [flushBuffer]);
 
   const stopRecognizer = useCallback(async () => {
@@ -69,6 +74,17 @@ export function useSpeechRecognizer({
       recognizerRef.current = null;
     }
   }, []);
+
+  const restartRecognizer = useCallback(async () => {
+    if (isRestartingRef.current) return;
+    isRestartingRef.current = true;
+    
+    console.info('[SpeechRecognizer] Triggering restart sequence...');
+    await stopRecognizer();
+    await startRecognizer();
+    
+    isRestartingRef.current = false;
+  }, [stopRecognizer]);
 
   const startRecognizer = useCallback(async () => {
     if (!enabled || !sourceLocale) return;
@@ -97,6 +113,7 @@ export function useSpeechRecognizer({
           console.debug('[SpeechRecognizer] Chunk recognized:', { text });
           bufferRef.current += (bufferRef.current ? " " : "") + text.trim();
 
+          // Flush immediately if sentence ends with . ? !
           if (/[.?!]$/.test(text.trim())) {
             flushBuffer();
           } else {
@@ -108,7 +125,6 @@ export function useSpeechRecognizer({
       activeRecognizer.canceled = (s: any, e: any) => {
         console.warn('[SpeechRecognizer] Canceled:', { reason: e.reason, details: e.errorDetails });
         if (e.reason === SpeechSDK.CancellationReason.Error) {
-          // Trigger restart on error
           restartRecognizer();
         }
       };
@@ -123,18 +139,7 @@ export function useSpeechRecognizer({
     } catch (err) {
       console.error('[SpeechRecognizer] Initialization error:', err);
     }
-  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
-
-  const restartRecognizer = useCallback(async () => {
-    if (isRestartingRef.current) return;
-    isRestartingRef.current = true;
-    
-    console.info('[SpeechRecognizer] Triggering restart sequence...');
-    await stopRecognizer();
-    await startRecognizer();
-    
-    isRestartingRef.current = false;
-  }, [stopRecognizer, startRecognizer]);
+  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush, restartRecognizer]);
 
   // Watchdog effect: Azure streams can sometimes hang silently
   useEffect(() => {

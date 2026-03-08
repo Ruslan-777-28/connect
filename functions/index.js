@@ -523,20 +523,6 @@ exports.startCall = onCall(
 
       const offer = offerSnap.data();
 
-      // Check availability / scheduling
-      if (offer.schedulingType === 'instant') {
-        const receiverSnap = await db.doc(`users/${receiverId}`).get();
-        if (receiverSnap.exists) {
-          const receiver = receiverSnap.data();
-          const isOnline = receiver.availability?.status === 'online';
-          const until = receiver.availability?.until;
-          const expired = until && (until.toMillis?.() < Date.now());
-          if (!isOnline || expired) {
-            throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
-          }
-        }
-      }
-
       const pricingSnapshot = {
         type: offer.type,
         currency: COIN_CURRENCY,

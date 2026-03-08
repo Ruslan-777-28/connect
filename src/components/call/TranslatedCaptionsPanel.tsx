@@ -15,7 +15,7 @@ interface TranslatedCaptionsPanelProps {
 export function TranslatedCaptionsPanel({ segments, localPreview, className }: TranslatedCaptionsPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new segments arrive or local preview updates
+  // Auto-scroll to bottom when new segments arrive
   useEffect(() => {
     if (viewportRef.current) {
       const scrollContainer = viewportRef.current.querySelector('[data-radix-scroll-area-viewport]');
@@ -55,11 +55,6 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                   )}>
                     {segment.speakerDisplayName || (segment.speakerRole === 'caller' ? 'Клієнт' : 'Профі')}
                   </span>
-                  {!segment.isFinal && (
-                    <span className="text-[8px] text-yellow-500 font-bold animate-pulse tracking-widest uppercase">
-                      Запис...
-                    </span>
-                  )}
                 </div>
                 <span className="text-[7px] text-white/20 font-mono uppercase tracking-tighter">
                   {segment.sourceLocale} → {segment.targetLocale}
@@ -71,16 +66,14 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                 {segment.translatedText}
               </p>
               
-              {/* Original Text (Secondary) */}
-              {segment.isFinal && (
-                <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
-                  {segment.originalText}
-                </p>
-              )}
+              {/* Original Text (Secondary) - Dual Language Mode */}
+              <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
+                {segment.originalText}
+              </p>
             </div>
           ))}
 
-          {/* Local Preview (My ongoing speech) */}
+          {/* Local Preview (Ongoing speech) */}
           {localPreview && (
             <div className="flex flex-col gap-1.5 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
               <div className="flex items-center gap-2">

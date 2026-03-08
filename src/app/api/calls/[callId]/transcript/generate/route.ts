@@ -39,19 +39,18 @@ export async function POST(
       return NextResponse.json({ ok: true, message: 'No segments found to generate transcript' });
     }
 
-    // 3. Format the transcript text: [Time] Name (Role) | Original: ... | Translation: ...
+    // 3. Format the transcript text: [Time] Name | Original | Translation
     const transcriptLines: string[] = [];
     const participants = translationData.participants || {};
 
     segmentsSnap.forEach((doc) => {
       const seg = doc.data();
       const speakerName = seg.speakerDisplayName || participants[seg.speakerUid]?.displayName || 'User';
-      const role = seg.speakerRole === 'caller' ? 'Client' : 'Expert';
       const time = seg.emittedAt?.toDate?.()?.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' }) || '--:--';
       
-      transcriptLines.push(`[${time}] ${speakerName} (${role})`);
-      transcriptLines.push(`Original (${seg.sourceLocale}): ${seg.originalText}`);
-      transcriptLines.push(`Translation (${seg.targetLocale}): ${seg.translatedText}`);
+      transcriptLines.push(`[${time}] ${speakerName}`);
+      transcriptLines.push(`Original: ${seg.originalText}`);
+      transcriptLines.push(`Translation: ${seg.translatedText}`);
       transcriptLines.push('------------------------------------------');
     });
 
@@ -74,10 +73,10 @@ export async function POST(
       },
     });
 
-    // Make the file accessible via signed URL
+    // Make the file accessible
     const [url] = await file.getSignedUrl({
       action: 'read',
-      expires: '03-09-2491', // Long term expiration
+      expires: '03-09-2491', // Long term
     });
 
     // 5. Update Firestore records

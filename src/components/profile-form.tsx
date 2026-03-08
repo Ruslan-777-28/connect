@@ -100,14 +100,14 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
       });
 
       toast({
-        title: 'Success',
-        description: 'Your profile has been updated.',
+        title: 'Успіх',
+        description: 'Профіль оновлено.',
       });
     } catch (error) {
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to update profile. Please try again.',
+        title: 'Помилка',
+        description: 'Не вдалося оновити профіль.',
       });
     } finally {
       setIsLoading(false);
@@ -140,8 +140,8 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
             />
           </div>
           <div className="text-sm text-muted-foreground">
-            <p>Upload a new avatar.</p>
-            <p>Recommended size: 200x200px</p>
+            <p>Завантажте нове фото профілю.</p>
+            <p>Рекомендований розмір: 200x200px</p>
           </div>
         </div>
 
@@ -150,9 +150,9 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
           name="name"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>Ім'я</FormLabel>
               <FormControl>
-                <Input placeholder="Your Name" {...field} />
+                <Input placeholder="Ваше ім'я" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -166,12 +166,12 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
             <FormItem>
               <FormLabel className="flex items-center gap-2">
                 <Languages className="h-4 w-4" />
-                Language for communication
+                Рідна мова (для перекладу)
               </FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select language" />
+                    <SelectValue placeholder="Оберіть мову" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
@@ -192,10 +192,10 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
           name="bio"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Bio</FormLabel>
+              <FormLabel>Біографія</FormLabel>
               <FormControl>
                 <Textarea
-                  placeholder="Tell us a little bit about yourself"
+                  placeholder="Розкажіть трохи про себе"
                   className="resize-none"
                   {...field}
                 />
@@ -205,7 +205,7 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
           )}
         />
         <Button type="submit" disabled={isLoading}>
-          {isLoading ? 'Saving...' : 'Save Changes'}
+          {isLoading ? 'Збереження...' : 'Зберегти зміни'}
         </Button>
       </form>
     </Form>

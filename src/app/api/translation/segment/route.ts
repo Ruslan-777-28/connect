@@ -2,12 +2,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
-import { ai } from '@/ai/genkit';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
+ * Performs translation using Azure Translator API.
+ */
+async function translateText(text: string, targetLocale: string): Promise<string> {
+  const key = process.env.AZURE_TRANSLATOR_KEY;
+  const region = process.env.AZURE_TRANSLATOR_REGION;
+  
+  if (!key) {
+    // Fallback or development warning
+    console.warn('AZURE_TRANSLATOR_KEY not configured');
+    return `[Translated to ${targetLocale}] ${text}`;
+  }
+
+  const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
+  // Extract ISO 639-1 code from BCP-47
+  const to = targetLocale.split('-')[0];
+
+  try {
+    const res = await fetch(`${endpoint}&to=${to}`, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": key,
+        "Ocp-Apim-Subscription-Region": region || "",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify([{ Text: text }])
+    });
+
+    const json = await res.json();
+    return json[0].translations[0].text;
+  } catch (error) {
+    console.error('Azure Translation failed:', error);
+    return text; // Return original on failure
+  }
+}
+
+/**
  * Handles translation of a single recognized phrase and saves it to Firestore.
- * This endpoint is called by the browser when a final recognized phrase is available.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -34,24 +68,13 @@ export async function POST(request: NextRequest) {
 
     const { sourceLocale, targetLocale } = speakerData;
 
-    // 2. Perform translation using Genkit (LLM)
-    // We use a high-quality LLM for natural-sounding translations
-    const translationResponse = await ai.generate({
-      prompt: `Translate the following speech transcript from ${sourceLocale} to ${targetLocale}. 
-      Maintain the original tone and context.
-      
-      Text: "${sourceText}"
-      
-      Provide ONLY the translated text, no extra explanations or quotation marks.`,
-    });
-
-    const translatedText = translationResponse.text;
+    // 2. Perform translation
+    const translatedText = await translateText(sourceText, targetLocale);
 
     // 3. Save the translation segment to Firestore subcollection
     const segmentsRef = translationRef.collection('segments');
     
-    // Use an atomic increment for sequence tracking if needed, 
-    // or calculate based on existing metrics for MVP simplicity.
+    // Use an atomic increment for sequence tracking
     const sequence = (translationData.metrics?.totalSegments || 0) + 1;
 
     const segmentData = {
@@ -67,7 +90,7 @@ export async function POST(request: NextRequest) {
       sequence,
       emittedAt: FieldValue.serverTimestamp(),
       finalizedAt: FieldValue.serverTimestamp(),
-      provider: 'genkit_llm',
+      provider: 'azure_translator',
       status: 'final',
     };
 

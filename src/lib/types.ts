@@ -29,7 +29,7 @@ export type UserProfile = {
   email: string;
   bio?: string;
   avatarUrl?: string;
-  preferredLanguage?: string;
+  preferredLanguage?: string; // BCP-47 locale (uk-UA, en-US, etc.)
   balance: number;
   held: number;
   currency?: 'COIN' | string;

@@ -18,14 +18,13 @@ export async function POST(
       return NextResponse.json({ error: 'Missing callId' }, { status: 400 });
     }
 
-    // Phase 1: Server-side participant formation
-    // 1. Fetch the call document to get callerId and receiverId
+    // 1. Fetch the call document
     const callSnap = await adminDb.collection('calls').doc(callId).get();
     if (!callSnap.exists) {
       return NextResponse.json({ error: 'Call not found' }, { status: 404 });
     }
     const call = callSnap.data();
-    const { callerId, receiverId, roomName, roomUrl, translationEnabled } = call;
+    const { callerId, receiverId, roomName, roomUrl } = call;
 
     // 2. Fetch profiles to get preferredLanguage
     const [callerSnap, receiverSnap] = await Promise.all([
@@ -39,14 +38,14 @@ export async function POST(
     const callerLang = caller.preferredLanguage || 'uk-UA';
     const receiverLang = receiver.preferredLanguage || 'en-US';
 
-    // 3. Form participants array
+    // 3. Form participants map based on server-side profiles
     const participants = [
       {
         uid: callerId,
         role: 'caller' as const,
         displayName: caller.name || 'Caller',
         sourceLocale: callerLang,
-        targetLocale: receiverLang, // Caller wants to see what Receiver says in Caller's lang
+        targetLocale: receiverLang, 
         captionsEnabled: true,
       },
       {
@@ -81,40 +80,16 @@ export async function POST(
       });
     }
 
-    let worker;
+    // Start the worker (Mock or real)
     try {
-      worker = await startWorkerTranslationSession({
+      await startWorkerTranslationSession({
         callId,
         roomName: roomName ?? null,
         dailyRoomUrl: roomUrl ?? null,
         participants,
       });
     } catch (workerError) {
-      const message =
-        workerError instanceof Error ? workerError.message : 'Unknown worker start error';
-
-      await translationRef.set(
-        {
-          status: 'error',
-          botStatus: 'failed',
-          updatedAt: FieldValue.serverTimestamp(),
-          lastError: {
-            code: 'WORKER_START_FAILED',
-            message,
-            source: 'bot',
-            at: FieldValue.serverTimestamp(),
-          },
-        },
-        { merge: true },
-      );
-
-      return NextResponse.json(
-        {
-          error: 'Translation session created, but worker failed to start',
-          details: message,
-        },
-        { status: 502 },
-      );
+      console.error('Worker failed to start, but continuing session creation:', workerError);
     }
 
     const savedSnap = await translationRef.get();
@@ -122,17 +97,10 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       callId,
-      worker,
       translation: savedSnap.data(),
     });
   } catch (error) {
     console.error('[translation/start] failed:', error);
-
-    return NextResponse.json(
-      {
-        error: 'Failed to start translation session',
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

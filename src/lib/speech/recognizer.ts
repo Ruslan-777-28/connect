@@ -3,6 +3,7 @@ import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**
  * Initializes an Azure Speech Recognizer instance using a temporary token.
+ * Includes production-ready settings: TrueText, Dictation, and locale selection.
  */
 export async function createRecognizer(locale: string) {
   const tokenRes = await fetch('/api/speech/token');
@@ -20,6 +21,7 @@ export async function createRecognizer(locale: string) {
   speechConfig.speechRecognitionLanguage = locale;
 
   // Enable TrueText for punctuation, capitalization and sentence normalization
+  // This significantly improves translation quality by providing structured sentences.
   speechConfig.setProperty(
     'SpeechServiceResponse_PostProcessingOption',
     'TrueText'
