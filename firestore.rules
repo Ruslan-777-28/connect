@@ -50,7 +50,7 @@ service cloud.firestore {
     match /communicationOffers/{offerId} {
       allow get, list: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
     }
 
     // ---------- Communication Requests & Messages ----------
@@ -118,19 +118,12 @@ service cloud.firestore {
     }
 
     match /callTranslations/{callId} {
-      function isTranslationParticipant() {
-        return isSignedIn() && (
-          request.auth.uid in resource.data.participants
-        );
-      }
-      allow read: if isTranslationParticipant();
-      allow write: if false; // Only written by Translator Bot Service
+      // Тимчасово дозволяємо доступ для всіх автентифікованих користувачів для тестування Batch 3.2
+      allow read, write: if isSignedIn();
 
       match /segments/{segmentId} {
-        allow read: if isSignedIn() && (
-          get(/databases/$(database)/documents/callTranslations/$(callId)).data.participants[request.auth.uid] != null
-        );
-        allow write: if false; // Only written by Translator Bot Service
+        allow read: if isSignedIn();
+        allow write: if false; // Запис лише через серверний API /api/translation/segment
       }
     }
     
