@@ -44,11 +44,11 @@ interface ProfileFormProps {
 }
 
 const languages = [
-  { value: 'uk-UA', label: 'Ukrainian' },
-  { value: 'en-US', label: 'English' },
-  { value: 'pl-PL', label: 'Polish' },
-  { value: 'de-DE', label: 'German' },
-  { value: 'fr-FR', label: 'French' },
+  { value: 'uk-UA', label: 'Ukrainian (uk-UA)' },
+  { value: 'en-US', label: 'English (en-US)' },
+  { value: 'pl-PL', label: 'Polish (pl-PL)' },
+  { value: 'de-DE', label: 'German (de-DE)' },
+  { value: 'fr-FR', label: 'French (fr-FR)' },
 ];
 
 export function ProfileForm({ userProfile }: ProfileFormProps) {
@@ -120,7 +120,7 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
         <div className="flex items-center gap-6">
           <div className="relative">
             <UserAvatar 
-              user={{...userProfile, avatarUrl: avatarPreview || userProfile.avatarUrl}} 
+              user={{...userProfile, avatarUrl: avatarPreview || userProfile.avatarUrl} as any} 
               className="h-24 w-24"
             />
             <Button
@@ -166,7 +166,7 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
             <FormItem>
               <FormLabel className="flex items-center gap-2">
                 <Languages className="h-4 w-4" />
-                Рідна мова (для перекладу)
+                Мова спілкування (BCP-47)
               </FormLabel>
               <Select onValueChange={field.onChange} defaultValue={field.value}>
                 <FormControl>

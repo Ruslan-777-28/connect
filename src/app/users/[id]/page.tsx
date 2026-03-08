@@ -49,9 +49,11 @@ export default function UserProfilePage() {
   const [isCalling, setIsCalling] = useState(false);
   const [isOrdering, setIsOrdering] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState<CommunicationOffer | null>(null);
+  const [callOfferId, setCallOfferId] = useState<string | null>(null);
   const [questionText, setQuestionText] = useState('');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [withTranslator, setWithTranslator] = useState(false);
+  
+  const [withTranslator, setWithTranslator] = useState(true);
   const [saveTranscript, setSaveTranscript] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -86,7 +88,6 @@ export default function UserProfilePage() {
 
   const online = isInstantOnline(userProfile?.availability);
 
-  // Filter out scheduled offers from the main "Services" list, they go to the calendar
   const instantOffers = useMemo(() => {
     if (!offers) return [];
     return offers.filter(o => o.schedulingType !== 'scheduled');
@@ -144,18 +145,11 @@ export default function UserProfilePage() {
     }
   };
 
-  const handleCallClick = async (offerId: string) => {
-    if (!userProfile || !currentUser) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Потрібна авторизація', 
-        action: <ToastAction altText="Login" onClick={() => router.push('/login')}>Увійти</ToastAction>
-      });
-      return;
-    }
+  const handleCallInitiate = async () => {
+    if (!userProfile || !currentUser || !callOfferId) return;
     setIsCalling(true);
     try {
-      const { callId } = await startVideoCall(app, userProfile.id, offerId, {
+      const { callId } = await startVideoCall(app, userProfile.id, callOfferId, {
         translationEnabled: withTranslator,
         transcriptEnabled: saveTranscript
       });
@@ -163,6 +157,8 @@ export default function UserProfilePage() {
     } catch (error: any) {
       setIsCalling(false);
       toast({ variant: 'destructive', title: 'Помилка', description: error.message });
+    } finally {
+      setCallOfferId(null);
     }
   };
 
@@ -174,7 +170,7 @@ export default function UserProfilePage() {
       <Card className="overflow-hidden mb-8">
         <div className="h-32 bg-primary/20" />
         <CardContent className="relative -mt-16 flex flex-col items-center p-6 text-center">
-          <UserAvatar user={userProfile} className="h-32 w-32 border-4 border-card" />
+          <UserAvatar user={userProfile as any} className="h-32 w-32 border-4 border-card" />
           <h1 className="mt-4 text-3xl font-bold">{userProfile.name}</h1>
           <p className="mt-4 max-w-prose text-foreground/80">{userProfile.bio}</p>
           
@@ -267,24 +263,7 @@ export default function UserProfilePage() {
                         </div>
                       </div>
 
-                      {offer.type === 'video' && (
-                        <div className="space-y-3 py-2 border-t border-b border-primary/5">
-                          <div className="flex items-center space-x-2">
-                            <Checkbox id="translator" checked={withTranslator} onCheckedChange={(val) => setWithTranslator(!!val)} />
-                            <Label htmlFor="translator" className="text-xs flex items-center gap-1.5 cursor-pointer">
-                              <Globe className="h-3 w-3 text-primary" /> Приєднати AI-перекладач
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <Checkbox id="transcript" checked={saveTranscript} onCheckedChange={(val) => setSaveTranscript(!!val)} />
-                            <Label htmlFor="transcript" className="text-xs flex items-center gap-1.5 cursor-pointer">
-                              <History className="h-3 w-3 text-primary" /> Зберегти транскрипт
-                            </Label>
-                          </div>
-                        </div>
-                      )}
-
-                      <Button className={cn("w-full mt-auto font-bold", offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground")} disabled={isCalling || (offer.type === 'video' && !online)} onClick={() => offer.type === 'video' ? handleCallClick(offer.id) : handleOrderClick(offer)}>
+                      <Button className={cn("w-full mt-auto font-bold", offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground")} disabled={isCalling || (offer.type === 'video' && !online)} onClick={() => offer.type === 'video' ? setCallOfferId(offer.id) : handleOrderClick(offer)}>
                         {offer.type === 'video' ? <><Phone className="mr-2 h-4 w-4" /> Виклик</> : <><Send className="mr-2 h-4 w-4" /> Замовити</>}
                       </Button>
                     </CardContent>
@@ -320,6 +299,38 @@ export default function UserProfilePage() {
         </section>
       </div>
 
+      {/* Video Call Initiation Modal */}
+      <Dialog open={!!callOfferId} onOpenChange={(open) => !open && setCallOfferId(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Налаштування виклику</DialogTitle>
+            <DialogDescription>Оберіть режими для відеозустрічі з {userProfile.name}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center space-x-3 rounded-lg border p-3">
+              <Checkbox id="translator-init" checked={withTranslator} onCheckedChange={(val) => setWithTranslator(!!val)} />
+              <Label htmlFor="translator-init" className="flex flex-1 items-center gap-2 cursor-pointer font-semibold text-primary">
+                <Globe className="h-4 w-4" /> Приєднати AI-перекладач
+              </Label>
+            </div>
+            <div className="flex items-center space-x-3 rounded-lg border p-3">
+              <Checkbox id="transcript-init" checked={saveTranscript} onCheckedChange={(val) => setSaveTranscript(!!val)} />
+              <Label htmlFor="transcript-init" className="flex flex-1 items-center gap-2 cursor-pointer font-semibold text-foreground/80">
+                <History className="h-4 w-4" /> Зберегти транскрипт
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="flex-1" onClick={() => setCallOfferId(null)}>Скасувати</Button>
+            <Button className="flex-1" onClick={handleCallInitiate} disabled={isCalling}>
+              {isCalling ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Phone className="h-4 w-4 mr-2" />}
+              Почати виклик
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Order Modal (Text/File) */}
       <Dialog open={!!selectedOffer} onOpenChange={(open) => !open && setSelectedOffer(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Нове замовлення</DialogTitle><DialogDescription>Введіть ваше запитання нижче.</DialogDescription></DialogHeader>
@@ -342,7 +353,7 @@ export default function UserProfilePage() {
               offers={scheduledOffers} 
             />
           </DialogContent>
-        )}
+        </Dialog>
       )}
     </div>
   );

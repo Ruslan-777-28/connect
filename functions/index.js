@@ -506,6 +506,8 @@ exports.startCall = onCall(
       const callerId = requireAuth(request);
       const receiverId = request.data?.receiverId;
       const offerId = request.data?.offerId;
+      
+      // Batch 1 flags
       const translationEnabled = !!request.data?.translationEnabled;
       const transcriptEnabled = !!request.data?.transcriptEnabled;
 
@@ -558,6 +560,8 @@ exports.startCall = onCall(
         roomUrl: room.url,
         roomName: roomName,
         token: tokenData.token,
+        
+        // Batch 1: write flags
         translationEnabled,
         transcriptEnabled
       };
@@ -577,7 +581,10 @@ exports.acceptCall = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const callId = request.data?.callId;
+    
+    // Batch 1: receiver can choose to accept with translator
     const translationEnabled = !!request.data?.translationEnabled;
+    
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
@@ -618,6 +625,7 @@ exports.acceptCall = onCall(
         billedCoins: rate 
       };
 
+      // Batch 1: update flag if receiver requested
       if (translationEnabled) {
         updates.translationEnabled = true;
       }

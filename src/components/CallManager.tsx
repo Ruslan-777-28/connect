@@ -44,6 +44,8 @@ export function CallManager() {
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  
+  // Batch 1: Receiver choice
   const [acceptWithTranslator, setAcceptWithTranslator] = useState(false);
   
   const busyCallIdRef = useRef<string | null>(null);
@@ -107,6 +109,8 @@ export function CallManager() {
       
       const topRingingCall = ringingCalls[0];
       setIncomingCall(topRingingCall || null);
+      
+      // Auto-set translator preference if caller requested it
       if (topRingingCall) {
         setAcceptWithTranslator(!!topRingingCall.translationEnabled);
       }
@@ -126,7 +130,10 @@ export function CallManager() {
     try {
       const functions = getFunctions(app, 'us-central1');
       const acceptCall = httpsCallable<{ callId: string, translationEnabled?: boolean }, AcceptCallResult>(functions, 'acceptCall');
-      const res = await acceptCall({ callId, translationEnabled: acceptWithTranslator });
+      const res = await acceptCall({ 
+        callId, 
+        translationEnabled: acceptWithTranslator 
+      });
       
       if (res.data?.token && res.data?.roomUrl) {
         sessionStorage.setItem(`dailyToken:${callId}`, res.data.token);
@@ -228,7 +235,7 @@ export function CallManager() {
 
       {/* Active Call Bar */}
       {activeCallWithCaller && !incomingCall ? (
-        <ActiveCallBar call={activeCallWithCaller} />
+        <ActiveCallBar call={activeCallWithCaller as any} />
       ) : null}
     </>
   );
