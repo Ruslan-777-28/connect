@@ -20,7 +20,6 @@ export async function GET() {
         method: 'POST',
         headers: {
           'Ocp-Apim-Subscription-Key': key,
-          'Content-Length': '0',
         },
       }
     );

@@ -4,19 +4,19 @@ import { adminDb } from '@/lib/firebase/admin';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
- * Performs translation using Azure Translator API.
+ * Виконує переклад за допомогою Azure Translator API.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
   const region = process.env.AZURE_TRANSLATOR_REGION;
   
   if (!key) {
-    console.warn('AZURE_TRANSLATOR_KEY not configured, returning original text.');
+    console.warn('AZURE_TRANSLATOR_KEY не налаштовано, повертаємо оригінал.');
     return text;
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  // Extract ISO 639-1 code (e.g., 'uk' from 'uk-UA')
+  // Отримуємо ISO 639-1 код (наприклад, 'uk' з 'uk-UA')
   const to = targetLocale.split('-')[0];
 
   try {
@@ -43,18 +43,17 @@ async function translateText(text: string, targetLocale: string): Promise<string
 }
 
 /**
- * Handles processing of a recognized speech segment: 
- * Translates it and stores it in Firestore for the other participant to see.
+ * Обробляє розпізнаний сегмент мовлення: перекладає та зберігає у Firestore.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { callId, speakerId, sourceText } = await request.json();
+    const { callId, speakerId, text } = await request.json();
 
-    if (!callId || !speakerId || !sourceText) {
+    if (!callId || !speakerId || !text) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Get translation configuration
+    // 1. Отримуємо конфігурацію сесії перекладу
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const translationSnap = await translationRef.get();
 
@@ -71,10 +70,10 @@ export async function POST(request: NextRequest) {
 
     const { sourceLocale, targetLocale } = speakerData;
 
-    // 2. Perform translation
-    const translatedText = await translateText(sourceText, targetLocale);
+    // 2. Виконуємо переклад
+    const translatedText = await translateText(text, targetLocale);
 
-    // 3. Save segment with sequence tracking
+    // 3. Зберігаємо сегмент з підтримкою sequence для правильного сортування
     const segmentsRef = translationRef.collection('segments');
     const sequence = (translationData.metrics?.totalSegments || 0) + 1;
 
@@ -85,7 +84,7 @@ export async function POST(request: NextRequest) {
       speakerDisplayName: speakerData.displayName,
       sourceLocale,
       targetLocale,
-      originalText: sourceText,
+      originalText: text,
       translatedText,
       isFinal: true,
       sequence,
@@ -97,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     await segmentsRef.add(segmentData);
 
-    // 4. Update session metrics
+    // 4. Оновлюємо метрики сесії
     await translationRef.update({
       'metrics.totalSegments': FieldValue.increment(1),
       'metrics.finalSegments': FieldValue.increment(1),

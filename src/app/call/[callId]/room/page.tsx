@@ -80,7 +80,9 @@ export default function CallRoomPage() {
   const myConfig = translation?.participants?.[myProfileId || ''];
   
   const handleRecognized = useCallback(async (text: string) => {
-    console.log(`[CallRoom] Recognized phrase for ${myProfileId}: ${text}`);
+    if (!myProfileId) return;
+    
+    console.log(`[CallRoom] Sending segment for ${myProfileId}: ${text}`);
     
     // Send to translation pipeline
     try {
@@ -90,7 +92,7 @@ export default function CallRoomPage() {
         body: JSON.stringify({
           callId,
           speakerId: myProfileId,
-          sourceText: text,
+          text: text, // Changed from sourceText to text
         })
       });
     } catch (err) {
