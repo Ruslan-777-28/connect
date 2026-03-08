@@ -5,6 +5,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { TranslationSegmentDoc } from '@/lib/translation/types';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 
 interface TranslatedCaptionsPanelProps {
   segments: TranslationSegmentDoc[] | null;
@@ -39,39 +40,50 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
     <div ref={viewportRef} className={cn("relative group h-full", className)}>
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden">
         <div className="p-4 space-y-5">
-          {segments?.slice(-30).map((segment, idx) => (
-            <div 
-              key={`${segment.speakerUid}-${segment.sequence}-${idx}`} 
-              className={cn(
-                "flex flex-col gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
-                !segment.isFinal && "opacity-70 scale-[0.98] origin-left"
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className={cn(
-                    "text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none",
-                    segment.speakerRole === 'caller' ? "bg-primary text-primary-foreground" : "bg-green-500 text-white"
-                  )}>
-                    {segment.speakerDisplayName || (segment.speakerRole === 'caller' ? 'Клієнт' : 'Профі')}
+          {segments?.map((segment, idx) => {
+            const isPending = segment.status === 'partial' || !segment.translatedText;
+            
+            return (
+              <div 
+                key={`${segment.speakerUid}-${segment.sequence}-${idx}`} 
+                className="flex flex-col gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none",
+                      segment.speakerRole === 'caller' ? "bg-primary text-primary-foreground" : "bg-green-500 text-white"
+                    )}>
+                      {segment.speakerDisplayName || (segment.speakerRole === 'caller' ? 'Клієнт' : 'Профі')}
+                    </span>
+                    {isPending && (
+                      <span className="flex items-center gap-1 text-[7px] text-primary animate-pulse font-bold uppercase tracking-tighter">
+                        <Loader2 className="h-2 w-2 animate-spin" /> Переклад...
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[7px] text-white/20 font-mono uppercase tracking-tighter">
+                    {segment.sourceLocale} → {segment.targetLocale}
                   </span>
                 </div>
-                <span className="text-[7px] text-white/20 font-mono uppercase tracking-tighter">
-                  {segment.sourceLocale} → {segment.targetLocale}
-                </span>
+                
+                {/* Main Text Slot: Shows translation if ready, otherwise original */}
+                <p className={cn(
+                  "text-sm leading-relaxed transition-colors duration-500",
+                  isPending ? "text-white/60 font-medium italic" : "text-white font-bold"
+                )}>
+                  {isPending ? segment.originalText : segment.translatedText}
+                </p>
+                
+                {/* Secondary Slot: Shows original text when translation is finished */}
+                {!isPending && (
+                  <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
+                    {segment.originalText}
+                  </p>
+                )}
               </div>
-              
-              {/* Main Translation */}
-              <p className="text-sm font-bold text-white leading-relaxed">
-                {segment.translatedText}
-              </p>
-              
-              {/* Original Text (Secondary) - Dual Language Mode */}
-              <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
-                {segment.originalText}
-              </p>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Local Preview (Ongoing speech) */}
           {localPreview && (

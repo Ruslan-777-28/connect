@@ -6,7 +6,6 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
  * Performs translation using Azure Translator API v3.0.
- * Uses regional resources if configured correctly.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
@@ -18,7 +17,6 @@ async function translateText(text: string, targetLocale: string): Promise<string
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  // Simple BCP-47 to language code mapping (e.g., uk-UA -> uk)
   const to = targetLocale.split('-')[0]; 
 
   try {
@@ -40,19 +38,20 @@ async function translateText(text: string, targetLocale: string): Promise<string
     return json[0].translations[0].text;
   } catch (error) {
     console.error('[Translator] Azure Translation failed:', error);
-    return text; // Fallback to original text on failure
+    return text; 
   }
 }
 
 /**
- * Processes a recognized speech segment: translates it and stores in Firestore.
- * Uses atomic transaction to manage global sequence number for perfect ordering.
+ * Processes a recognized speech segment using the "Speculative Captions" trick.
+ * 1. Immediate transaction to write original text (UI sees it instantly).
+ * 2. Background translation call.
+ * 3. Update segment with translated text.
  */
 export async function POST(request: NextRequest) {
   try {
     const { callId, speakerId, text } = await request.json();
 
-    // Guard: ignore empty or whitespace-only text
     if (!text?.trim()) {
       return NextResponse.json({ ok: true, skipped: 'empty' });
     }
@@ -61,7 +60,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Fetch translation context
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const translationSnap = await translationRef.get();
 
@@ -70,37 +68,36 @@ export async function POST(request: NextRequest) {
     }
 
     const translationData = translationSnap.data()!;
-    
-    // Guard: ensure translation is actually enabled for this session
     if (!translationData.enabled) {
-      return NextResponse.json({ error: 'Translation disabled for this call' }, { status: 403 });
+      return NextResponse.json({ error: 'Translation disabled' }, { status: 403 });
     }
 
     const participants = translationData.participants || {};
-    const speakerData = participants[speakerId];
-
-    if (!speakerData) {
-      return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
+    // Handle both array and map formats for robustness
+    let speakerData;
+    if (Array.isArray(participants)) {
+      speakerData = participants.find((p: any) => p.uid === speakerId);
+    } else {
+      speakerData = participants[speakerId];
     }
 
-    // 2. Perform translation via Azure
-    const translatedText = await translateText(text, speakerData.targetLocale);
+    if (!speakerData) {
+      return NextResponse.json({ error: 'Speaker not found' }, { status: 404 });
+    }
 
-    // 3. Atomic Transaction for Sequence + Metrics
-    // Ensures perfect order even if both participants speak simultaneously
-    const result = await adminDb.runTransaction(async (transaction) => {
+    // PHASE 1: Immediate Transactional Write (Original Text)
+    // The UI will see this segment immediately because of the Firestore listener
+    const { sequence, segmentDocRef } = await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
-      if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
+      if (!freshSnap.exists) throw new Error('Session disappeared');
       
       const data = freshSnap.data()!;
-      // Use nextSequence counter for guaranteed order across clients
       const currentSequence = data.nextSequence || 1;
 
       const segmentsRef = translationRef.collection('segments');
-      // Doc ID includes sequence for easier debugging and natural order
-      const segmentDocRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
+      const docRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
 
-      const segmentData = {
+      const initialSegment = {
         callId,
         speakerUid: speakerId,
         speakerRole: speakerData.role,
@@ -108,30 +105,42 @@ export async function POST(request: NextRequest) {
         sourceLocale: speakerData.sourceLocale,
         targetLocale: speakerData.targetLocale,
         originalText: text,
-        translatedText,
+        translatedText: '', // Empty initially
         isFinal: true,
         sequence: currentSequence,
         emittedAt: FieldValue.serverTimestamp(),
-        finalizedAt: FieldValue.serverTimestamp(),
+        finalizedAt: null,
         provider: 'azure_speech',
-        status: 'final',
+        status: 'partial', // 'partial' means translation pending in our logic
       };
 
-      transaction.set(segmentDocRef, segmentData);
+      transaction.set(docRef, initialSegment);
       transaction.update(translationRef, {
         nextSequence: currentSequence + 1,
         'metrics.totalSegments': FieldValue.increment(1),
-        'metrics.finalSegments': FieldValue.increment(1),
         lastSegmentAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
 
-      return { translatedText, sequence: currentSequence };
+      return { sequence: currentSequence, segmentDocRef: docRef };
     });
 
-    return NextResponse.json({ ok: true, ...result });
+    // PHASE 2: Background Translation
+    // We don't await this before returning 200 to the client, 
+    // but in serverless we must ensure it finishes.
+    const translatedText = await translateText(text, speakerData.targetLocale);
+
+    // PHASE 3: Update with final translation
+    await segmentDocRef.update({
+      translatedText,
+      status: 'final',
+      finalizedAt: FieldValue.serverTimestamp(),
+      'metrics.finalSegments': FieldValue.increment(1),
+    });
+
+    return NextResponse.json({ ok: true, sequence });
   } catch (error: any) {
-    console.error('[TranslationSegment] Processing failed:', error);
-    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
+    console.error('[TranslationSegment] failed:', error);
+    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
   }
 }
