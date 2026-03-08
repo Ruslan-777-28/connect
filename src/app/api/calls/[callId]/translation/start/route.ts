@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -5,21 +6,6 @@ import { adminDb } from '@/lib/firebase/admin';
 import { buildInitialTranslationDoc } from '@/lib/translation/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 import { startWorkerTranslationSession } from '@/lib/translation/worker-client';
-
-interface StartTranslationRequestBody {
-  roomName?: string | null;
-  dailyRoomUrl?: string | null;
-  callStatus?: 'pending' | 'accepted' | 'active' | 'ended' | 'missed';
-  participants?: Array<{
-    uid: string;
-    role: 'caller' | 'callee';
-    displayName?: string | null;
-    sourceLocale?: string;
-    targetLocale?: string;
-    captionsEnabled?: boolean;
-    audioTranslationEnabled?: boolean;
-  }>;
-}
 
 export async function POST(
   request: NextRequest,
@@ -32,24 +18,46 @@ export async function POST(
       return NextResponse.json({ error: 'Missing callId' }, { status: 400 });
     }
 
-    const body = (await request.json().catch(() => ({}))) as StartTranslationRequestBody;
-
-    if (!body.participants || !Array.isArray(body.participants) || body.participants.length === 0) {
-      return NextResponse.json(
-        { error: 'participants array is required' },
-        { status: 400 },
-      );
+    // Phase 1: Server-side participant formation
+    // 1. Fetch the call document to get callerId and receiverId
+    const callSnap = await adminDb.collection('calls').doc(callId).get();
+    if (!callSnap.exists) {
+      return NextResponse.json({ error: 'Call not found' }, { status: 404 });
     }
+    const call = callSnap.data();
+    const { callerId, receiverId, roomName, roomUrl, translationEnabled } = call;
 
-    // Strict validation for each participant
-    for (const p of body.participants) {
-      if (!p.uid || !p.role) {
-        return NextResponse.json(
-          { error: 'Each participant must have a uid and a role' },
-          { status: 400 },
-        );
+    // 2. Fetch profiles to get preferredLanguage
+    const [callerSnap, receiverSnap] = await Promise.all([
+      adminDb.collection('users').doc(callerId).get(),
+      adminDb.collection('users').doc(receiverId).get(),
+    ]);
+
+    const caller = callerSnap.data() || {};
+    const receiver = receiverSnap.data() || {};
+
+    const callerLang = caller.preferredLanguage || 'uk-UA';
+    const receiverLang = receiver.preferredLanguage || 'en-US';
+
+    // 3. Form participants array
+    const participants = [
+      {
+        uid: callerId,
+        role: 'caller' as const,
+        displayName: caller.name || 'Caller',
+        sourceLocale: callerLang,
+        targetLocale: receiverLang, // Caller wants to see what Receiver says in Caller's lang
+        captionsEnabled: true,
+      },
+      {
+        uid: receiverId,
+        role: 'callee' as const,
+        displayName: receiver.name || 'Receiver',
+        sourceLocale: receiverLang,
+        targetLocale: callerLang,
+        captionsEnabled: true,
       }
-    }
+    ];
 
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const existingSnap = await translationRef.get();
@@ -57,10 +65,10 @@ export async function POST(
     if (!existingSnap.exists) {
       const initialDoc = buildInitialTranslationDoc({
         callId,
-        callStatus: body.callStatus ?? 'accepted',
-        roomName: body.roomName ?? null,
-        dailyRoomUrl: body.dailyRoomUrl ?? null,
-        participants: body.participants,
+        callStatus: call.status ?? 'accepted',
+        roomName: roomName ?? null,
+        dailyRoomUrl: roomUrl ?? null,
+        participants,
       });
 
       await translationRef.set({
@@ -71,52 +79,15 @@ export async function POST(
         status: 'starting',
         botStatus: 'joining',
       });
-    } else {
-      const participantMap: Record<string, unknown> = {};
-
-      for (const participant of body.participants) {
-        participantMap[participant.uid] = {
-          uid: participant.uid,
-          role: participant.role,
-          displayName: participant.displayName ?? null,
-          sourceLocale: participant.sourceLocale ?? 'uk-UA',
-          targetLocale: participant.targetLocale ?? 'en-US',
-          captionsEnabled: participant.captionsEnabled ?? true,
-          audioTranslationEnabled: participant.audioTranslationEnabled ?? false,
-          joinedAt: null,
-          leftAt: null,
-          streamStatus: 'idle',
-        };
-      }
-
-      await translationRef.set(
-        {
-          enabled: true,
-          callId,
-          callStatus: body.callStatus ?? 'accepted',
-          status: 'starting',
-          botStatus: 'joining',
-          source: {
-            roomName: body.roomName ?? null,
-            dailyRoomUrl: body.dailyRoomUrl ?? null,
-          },
-          participants: participantMap,
-          startedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-          endedAt: null,
-          lastError: null,
-        },
-        { merge: true },
-      );
     }
 
     let worker;
     try {
       worker = await startWorkerTranslationSession({
         callId,
-        roomName: body.roomName ?? null,
-        dailyRoomUrl: body.dailyRoomUrl ?? null,
-        participants: body.participants,
+        roomName: roomName ?? null,
+        dailyRoomUrl: roomUrl ?? null,
+        participants,
       });
     } catch (workerError) {
       const message =

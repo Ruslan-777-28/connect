@@ -111,47 +111,6 @@ async function fetchDaily(path, method = 'GET', body = null) {
   return data;
 }
 
-// --- FIRESTORE TRIGGERS ---
-
-exports.onCommentCreated = onDocumentCreated(
-  { document: "posts/{postId}/comments/{commentId}", region: "us-central1" },
-  async (event) => {
-    const snapshot = event.data;
-    if (!snapshot) return;
-    const comment = snapshot.data();
-    const { postId } = event.params;
-
-    const db = admin.firestore();
-    
-    try {
-      const postSnap = await db.doc(`posts/${postId}`).get();
-      if (!postSnap.exists) return;
-
-      const post = postSnap.data();
-      const authorId = post.authorId;
-
-      if (comment.uid === authorId) return;
-
-      const commenterSnap = await db.doc(`users/${comment.uid}`).get();
-      const commenterName = commenterSnap.exists ? commenterSnap.data().name : "Користувач";
-
-      const nRef = db.collection("notifications").doc();
-      await nRef.set(buildNotification({
-        uid: authorId,
-        channel: "user",
-        kind: "new_comment",
-        requestId: postId,
-        title: "Новий коментар",
-        body: `${commenterName} прокоментував вашу публікацію "${post.title}".`
-      }));
-      
-      logger.info(`Notification sent to ${authorId} for comment on post ${postId}`);
-    } catch (error) {
-      logger.error("Error in onCommentCreated trigger:", error);
-    }
-  }
-);
-
 // --- COMM REQUEST: CREATE & HOLD ---
 exports.createCommunicationRequest = onCall(
   { region: "us-central1" },
@@ -539,113 +498,7 @@ exports.declineCommunicationRequest = onCall(
   }
 );
 
-// --- CLEANUP & EXPIRATION ---
-exports.expireCommunicationRequests = onSchedule(
-  { region: "us-central1", schedule: "every 5 minutes" },
-  async () => {
-    const db = admin.firestore();
-    const now = tsNow();
-    const snap = await db.collection("communicationRequests")
-      .where("status", "in", ["pending", "accepted", "answered"])
-      .where("expiresAt", "<=", now).limit(100).get();
-
-    for (const docSnap of snap.docs) {
-      const req = docSnap.data();
-      await db.runTransaction(async (tx) => {
-        if (req.reservedCoins > 0 && req.holdId) {
-          const holdRef = db.doc(`walletHolds/${req.holdId}`);
-          const holdSnap = await tx.get(holdRef);
-          if (holdSnap.exists && holdSnap.data().status === "held") {
-            const payerRef = db.doc(`users/${req.payerId}`);
-            const payerSnap = await tx.get(payerRef);
-            if (payerSnap.exists) {
-              const held = Number(payerSnap.data().held || 0);
-              tx.update(payerRef, { held: Math.max(0, held - req.reservedCoins) });
-            }
-            tx.update(holdRef, { status: "released", releasedAt: admin.firestore.FieldValue.serverTimestamp() });
-          }
-        }
-        tx.update(docSnap.ref, { status: "expired", expiredAt: admin.firestore.FieldValue.serverTimestamp() });
-        if (req.offerId) {
-          tx.update(db.doc(`communicationOffers/${req.offerId}`), { status: 'active' });
-        }
-      });
-    }
-  }
-);
-
-exports.cleanupExpiredOffers = onSchedule(
-  { region: "us-central1", schedule: "every 1 hours" },
-  async () => {
-    const db = admin.firestore();
-    const now = tsNow();
-    const snap = await db.collection("communicationOffers")
-      .where("schedulingType", "==", "scheduled")
-      .where("status", "==", "active")
-      .where("scheduledEnd", "<", now)
-      .limit(100).get();
-
-    const batch = db.batch();
-    snap.docs.forEach(doc => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
-    logger.info(`Cleaned up ${snap.docs.length} expired offers.`);
-  }
-);
-
-exports.sendCallReminders = onSchedule(
-  { region: "us-central1", schedule: "every 5 minutes" },
-  async () => {
-    const db = admin.firestore();
-    const now = Date.now();
-    const reminderWindow = now + 10 * 60000;
-    
-    const snap = await db.collection("communicationRequests")
-      .where("status", "==", "accepted")
-      .where("type", "==", "video")
-      .where("scheduledStart", ">=", admin.firestore.Timestamp.fromMillis(now))
-      .where("scheduledStart", "<=", admin.firestore.Timestamp.fromMillis(reminderWindow))
-      .limit(50).get();
-
-    for (const docSnap of snap.docs) {
-      const req = docSnap.data();
-      const requestId = docSnap.id;
-      
-      const alreadySent = await db.collection("notifications")
-        .where("requestId", "==", requestId)
-        .where("kind", "==", "call_reminder")
-        .limit(1).get();
-
-      if (alreadySent.empty) {
-        const participants = [req.initiatorId, req.authorId];
-        for (const uid of participants) {
-          await db.collection("notifications").add(buildNotification({
-            uid, channel: "user", kind: "call_reminder", requestId,
-            title: "Нагадування про дзвінок",
-            body: "Ваш запланований відеочат розпочнеться за декілька хвилин. Будьте готові!"
-          }));
-        }
-      }
-    }
-  }
-);
-
 // --- VIDEO CALLS ---
-exports.createDailyRoom = onCall(
-  { region: "us-central1", secrets: [DAILY_API_KEY] },
-  async (request) => {
-    requireAuth(request);
-    const room = await fetchDaily("rooms", "POST", {
-      properties: {
-        exp: Math.round(Date.now() / 1000) + 3600,
-        enable_chat: true,
-      }
-    });
-    return { roomUrl: room.url, name: room.name };
-  }
-);
-
 exports.startCall = onCall(
   { region: "us-central1", secrets: [DAILY_API_KEY] },
   async (request) => {
@@ -653,68 +506,34 @@ exports.startCall = onCall(
       const callerId = requireAuth(request);
       const receiverId = request.data?.receiverId;
       const offerId = request.data?.offerId;
-
-      // HARD LOGGING
-      logger.info("startCall input", {
-        uid: request.auth?.uid || null,
-        receiverId: request.data?.receiverId || null,
-        offerId: request.data?.offerId || null,
-      });
+      const translationEnabled = !!request.data?.translationEnabled;
+      const transcriptEnabled = !!request.data?.transcriptEnabled;
 
       if (!receiverId || !offerId) {
-        logger.error("startCall missing data", { receiverId, offerId });
         throw new HttpsError("invalid-argument", "Missing data");
       }
 
-      const offerRef = admin.firestore().doc(`communicationOffers/${offerId}`);
+      const db = admin.firestore();
+      const offerRef = db.doc(`communicationOffers/${offerId}`);
       const offerSnap = await offerRef.get();
 
-      // HARD LOGGING
-      logger.info("startCall offer lookup", {
-        offerId,
-        exists: offerSnap.exists,
-      });
-
       if (!offerSnap.exists) {
-        logger.error("startCall OFFER_NOT_FOUND", { offerId });
         throw new HttpsError("not-found", "OFFER_NOT_FOUND");
       }
 
       const offer = offerSnap.data();
 
-      // HARD LOGGING
-      logger.info("startCall offer data", {
-        ownerId: offer?.ownerId || null,
-        type: offer?.type || null,
-        pricing: offer?.pricing || null,
-        status: offer?.status || null,
-      });
-
-      if (!offer?.pricing) {
-        logger.error("startCall pricing missing", { offerId, offer });
-        throw new HttpsError("failed-precondition", "OFFER_PRICING_MISSING");
-      }
-
       // Check availability / scheduling
       if (offer.schedulingType === 'instant') {
-        const receiverSnap = await admin.firestore().doc(`users/${receiverId}`).get();
+        const receiverSnap = await db.doc(`users/${receiverId}`).get();
         if (receiverSnap.exists) {
           const receiver = receiverSnap.data();
           const isOnline = receiver.availability?.status === 'online';
           const until = receiver.availability?.until;
           const expired = until && (until.toMillis?.() < Date.now());
           if (!isOnline || expired) {
-            logger.warn("startCall receiver offline", { receiverId });
             throw new HttpsError("failed-precondition", "RECEIVER_OFFLINE");
           }
-        }
-      } else if (offer.schedulingType === 'scheduled' && offer.scheduledStart && offer.scheduledEnd) {
-        const now = Date.now();
-        const start = (offer.scheduledStart?.toMillis?.() || 0) - 5 * 60000;
-        const end = offer.scheduledEnd?.toMillis?.() || 0;
-        if (now < start || now > end) {
-          logger.warn("startCall NOT_CALL_TIME", { now, start, end });
-          throw new HttpsError("failed-precondition", "CALL_NOT_IN_TIME_WINDOW");
         }
       }
 
@@ -725,9 +544,6 @@ exports.startCall = onCall(
         ratePerSession: offer.pricing.ratePerSession || null,
       };
 
-      logger.info("startCall pricingSnapshot", { pricingSnapshot });
-
-      // 1. Create real Daily room
       const roomName = `call-${Date.now()}-${offerId.slice(0,5)}`;
       const room = await fetchDaily("rooms", "POST", {
         name: roomName,
@@ -736,7 +552,6 @@ exports.startCall = onCall(
         }
       });
 
-      // 2. Create token for caller
       const tokenData = await fetchDaily("meeting-tokens", "POST", {
         properties: {
           room_name: roomName,
@@ -745,7 +560,7 @@ exports.startCall = onCall(
         }
       });
 
-      const callRef = admin.firestore().collection("calls").doc();
+      const callRef = db.collection("calls").doc();
       const nowTs = tsNow();
       const expiresAt = admin.firestore.Timestamp.fromMillis(nowTs.toMillis() + 45000);
 
@@ -756,23 +571,16 @@ exports.startCall = onCall(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         roomUrl: room.url,
         roomName: roomName,
-        token: tokenData.token
+        token: tokenData.token,
+        translationEnabled,
+        transcriptEnabled
       };
-
-      logger.info("startCall callData ready", {
-        callId: callRef.id,
-        type: callData.type,
-        receiverId: callData.receiverId,
-      });
 
       await callRef.set(callData);
 
-      logger.info("startCall success", { callId: callRef.id, offerId, receiverId });
-
       return { callId: callRef.id, token: callData.token, roomUrl: callData.roomUrl };
     } catch (error) {
-      // HARD LOGGING
-      logger.error("startCall failed", { message: error?.message, stack: error?.stack, error });
+      logger.error("startCall failed", error);
       throw error;
     }
   }
@@ -783,6 +591,7 @@ exports.acceptCall = onCall(
   async (request) => {
     const uid = requireAuth(request);
     const callId = request.data?.callId;
+    const translationEnabled = !!request.data?.translationEnabled;
     const db = admin.firestore();
     const callRef = db.doc(`calls/${callId}`);
 
@@ -816,12 +625,18 @@ exports.acceptCall = onCall(
       
       const billedMinutes = call.pricingSnapshot.ratePerSession ? (call.durationMinutes || 30) : 1;
       
-      tx.update(callRef, { 
+      const updates = { 
         status: "accepted", 
         acceptedAtTs: tsNow(), 
         billedMinutes: billedMinutes, 
         billedCoins: rate 
-      });
+      };
+
+      if (translationEnabled) {
+        updates.translationEnabled = true;
+      }
+
+      tx.update(callRef, updates);
     });
 
     const tokenData = await fetchDaily("meeting-tokens", "POST", {
@@ -866,34 +681,5 @@ exports.endCall = onCall(
       tx.update(callRef, updates);
     });
     return { ok: true };
-  }
-);
-
-exports.billingTickAcceptedCalls = onSchedule(
-  { region: "us-central1", schedule: "every 1 minutes" },
-  async () => {
-    const db = admin.firestore();
-    const snap = await db.collection("calls").where("status", "==", "accepted").limit(50).get();
-    for (const docSnap of snap.docs) {
-      const call = docSnap.data();
-      if (call.type !== "video" || !call.acceptedAtTs || call.pricingSnapshot.ratePerSession) continue;
-      const elapsedSec = Math.floor((Date.now() - (call.acceptedAtTs?.toMillis?.() || Date.now())) / 1000);
-      const currentFullMin = Math.floor(elapsedSec / 60);
-      const dueMin = currentFullMin - call.billedMinutes + 1;
-      if (dueMin > 0) {
-        await db.runTransaction(async (tx) => {
-          const callerRef = db.doc(`users/${call.callerId}`);
-          const cSnap = await tx.get(callerRef);
-          const rate = call.pricingSnapshot.ratePerMinute;
-          if (cSnap.data().balance < (dueMin * rate)) {
-            tx.update(docSnap.ref, { status: "ended", endReason: "insufficient_balance" });
-          } else {
-            applyCoinTransferTx(tx, { db, fromUid: call.callerId, toUid: call.receiverId, amount: dueMin * rate, callId: docSnap.id, kind: "call_tick" });
-            tx.update(callerRef, { balance: cSnap.data().balance - (dueMin * rate) });
-            tx.update(docSnap.ref, { billedMinutes: call.billedMinutes + dueMin, billedCoins: call.billedCoins + (dueMin * rate) });
-          }
-        });
-      }
-    }
   }
 );

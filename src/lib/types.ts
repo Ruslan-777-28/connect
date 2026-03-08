@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 import type { 
   TranslationParticipantState, 
@@ -28,6 +29,7 @@ export type UserProfile = {
   email: string;
   bio?: string;
   avatarUrl?: string;
+  preferredLanguage?: string;
   balance: number;
   held: number;
   currency?: 'COIN' | string;
@@ -159,6 +161,8 @@ export type Call = CommunicationRequest & {
   acceptedAtTs?: Timestamp | null;
   endedAtTs?: Timestamp | null;
   caller?: UserProfile;
+  translationEnabled?: boolean;
+  transcriptEnabled?: boolean;
 };
 
 export type Post = {

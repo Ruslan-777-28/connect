@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package, Calendar } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package, Calendar, Globe, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -34,6 +34,8 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { PostCard } from '@/components/post-card';
 import { ProductCard } from '@/components/product-card';
 import { CalendarView } from '@/components/CalendarView';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -49,6 +51,8 @@ export default function UserProfilePage() {
   const [selectedOffer, setSelectedOffer] = useState<CommunicationOffer | null>(null);
   const [questionText, setQuestionText] = useState('');
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [withTranslator, setWithTranslator] = useState(false);
+  const [saveTranscript, setSaveTranscript] = useState(false);
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
@@ -151,7 +155,10 @@ export default function UserProfilePage() {
     }
     setIsCalling(true);
     try {
-      const { callId } = await startVideoCall(app, userProfile.id, offerId);
+      const { callId } = await startVideoCall(app, userProfile.id, offerId, {
+        translationEnabled: withTranslator,
+        transcriptEnabled: saveTranscript
+      });
       router.push(`/call/${callId}`);
     } catch (error: any) {
       setIsCalling(false);
@@ -259,6 +266,24 @@ export default function UserProfilePage() {
                           <span className="text-[10px] text-muted-foreground">/{offer.type === 'video' ? 'хв' : offer.type === 'file' ? 'файл' : 'пит'}</span>
                         </div>
                       </div>
+
+                      {offer.type === 'video' && (
+                        <div className="space-y-3 py-2 border-t border-b border-primary/5">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox id="translator" checked={withTranslator} onCheckedChange={(val) => setWithTranslator(!!val)} />
+                            <Label htmlFor="translator" className="text-xs flex items-center gap-1.5 cursor-pointer">
+                              <Globe className="h-3 w-3 text-primary" /> Приєднати AI-перекладач
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox id="transcript" checked={saveTranscript} onCheckedChange={(val) => setSaveTranscript(!!val)} />
+                            <Label htmlFor="transcript" className="text-xs flex items-center gap-1.5 cursor-pointer">
+                              <History className="h-3 w-3 text-primary" /> Зберегти транскрипт
+                            </Label>
+                          </div>
+                        </div>
+                      )}
+
                       <Button className={cn("w-full mt-auto font-bold", offer.type !== 'video' ? "bg-green-600 hover:bg-green-700 text-white" : "bg-primary text-primary-foreground")} disabled={isCalling || (offer.type === 'video' && !online)} onClick={() => offer.type === 'video' ? handleCallClick(offer.id) : handleOrderClick(offer)}>
                         {offer.type === 'video' ? <><Phone className="mr-2 h-4 w-4" /> Виклик</> : <><Send className="mr-2 h-4 w-4" /> Замовити</>}
                       </Button>

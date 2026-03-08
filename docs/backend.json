@@ -11,6 +11,7 @@
         "name": { "type": "string" },
         "avatarUrl": { "type": "string", "format": "uri" },
         "bio": { "type": "string" },
+        "preferredLanguage": { "type": "string", "default": "uk-UA", "description": "BCP-47 locale code for communication" },
         "balance": { "type": "number", "default": 0 },
         "held": { "type": "number", "default": 0, "description": "Reserved coins for pending requests" },
         "currency": { "type": "string", "default": "COIN" },

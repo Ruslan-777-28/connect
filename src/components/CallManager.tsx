@@ -24,7 +24,9 @@ import { Button } from '@/components/ui/button';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ActiveCallBar } from './ActiveCallBar';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from './ui/card';
-import { Phone, PhoneOff, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Loader2, Globe } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 
 type AcceptCallResult = {
   roomUrl: string;
@@ -42,6 +44,7 @@ export function CallManager() {
 
   const [busyCallId, setBusyCallId] = useState<string | null>(null);
   const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  const [acceptWithTranslator, setAcceptWithTranslator] = useState(false);
   
   const busyCallIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -104,6 +107,9 @@ export function CallManager() {
       
       const topRingingCall = ringingCalls[0];
       setIncomingCall(topRingingCall || null);
+      if (topRingingCall) {
+        setAcceptWithTranslator(!!topRingingCall.translationEnabled);
+      }
 
     }, (err) => {
       console.error('Call listener error:', err);
@@ -119,8 +125,8 @@ export function CallManager() {
     setBusyCallId(callId);
     try {
       const functions = getFunctions(app, 'us-central1');
-      const acceptCall = httpsCallable<{ callId: string }, AcceptCallResult>(functions, 'acceptCall');
-      const res = await acceptCall({ callId });
+      const acceptCall = httpsCallable<{ callId: string, translationEnabled?: boolean }, AcceptCallResult>(functions, 'acceptCall');
+      const res = await acceptCall({ callId, translationEnabled: acceptWithTranslator });
       
       if (res.data?.token && res.data?.roomUrl) {
         sessionStorage.setItem(`dailyToken:${callId}`, res.data.token);
@@ -179,8 +185,22 @@ export function CallManager() {
               </p>
             </CardHeader>
             <CardContent className="flex flex-col items-center gap-4 py-4">
-              <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground bg-muted p-2 rounded">
-                ID: {incomingCall.id.slice(0, 8)}...
+              <div className="space-y-3 w-full p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="accept-translator" 
+                    checked={acceptWithTranslator} 
+                    onCheckedChange={(val) => setAcceptWithTranslator(!!val)} 
+                  />
+                  <Label htmlFor="accept-translator" className="text-xs flex items-center gap-1.5 cursor-pointer font-bold text-primary">
+                    <Globe className="h-3 w-3" /> Увімкнути перекладач
+                  </Label>
+                </div>
+                {incomingCall.translationEnabled && (
+                  <p className="text-[10px] text-muted-foreground italic">
+                    * Автор запиту попросив підключити AI-перекладач
+                  </p>
+                )}
               </div>
             </CardContent>
             <CardFooter className="flex gap-3 pt-2">

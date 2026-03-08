@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState, useRef } from 'react';
@@ -19,13 +20,21 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { UserAvatar } from './user-avatar';
-import { Camera } from 'lucide-react';
+import { Camera, Languages } from 'lucide-react';
 import type { UserProfile } from '@/lib/types';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const profileFormSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters.'),
   bio: z.string().max(160, 'Bio must not be longer than 160 characters.').optional(),
+  preferredLanguage: z.string().default('uk-UA'),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
@@ -33,6 +42,14 @@ type ProfileFormValues = z.infer<typeof profileFormSchema>;
 interface ProfileFormProps {
   userProfile: UserProfile;
 }
+
+const languages = [
+  { value: 'uk-UA', label: 'Ukrainian' },
+  { value: 'en-US', label: 'English' },
+  { value: 'pl-PL', label: 'Polish' },
+  { value: 'de-DE', label: 'German' },
+  { value: 'fr-FR', label: 'French' },
+];
 
 export function ProfileForm({ userProfile }: ProfileFormProps) {
   const { user } = useUser();
@@ -48,6 +65,7 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
     defaultValues: {
       name: userProfile.name || '',
       bio: userProfile.bio || '',
+      preferredLanguage: userProfile.preferredLanguage || 'uk-UA',
     },
   });
 
@@ -77,6 +95,7 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
         name: data.name,
         bio: data.bio,
         avatarUrl: avatarUrl,
+        preferredLanguage: data.preferredLanguage,
         updatedAt: serverTimestamp()
       });
 
@@ -84,8 +103,6 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
         title: 'Success',
         description: 'Your profile has been updated.',
       });
-      // Refresh is no longer needed with real-time updates
-      // window.location.reload(); 
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -141,6 +158,35 @@ export function ProfileForm({ userProfile }: ProfileFormProps) {
             </FormItem>
           )}
         />
+
+        <FormField
+          control={form.control}
+          name="preferredLanguage"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-center gap-2">
+                <Languages className="h-4 w-4" />
+                Language for communication
+              </FormLabel>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {languages.map((lang) => (
+                    <SelectItem key={lang.value} value={lang.value}>
+                      {lang.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
         <FormField
           control={form.control}
           name="bio"

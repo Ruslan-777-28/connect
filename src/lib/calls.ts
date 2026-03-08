@@ -1,3 +1,4 @@
+
 'use client';
 
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -29,25 +30,31 @@ export async function endCallClient(
   }
 }
 
-/**
- * ЦЕЙ ФУНКЦІОНАЛ ПЕРЕДАЄ ДАНІ НА СЕРВЕР:
- * Тут receiverId та offerId потрапляють у httpsCallable('startCall')
- */
 export async function startVideoCall(
   app: FirebaseApp,
   receiverId: string,
-  offerId: string
+  offerId: string,
+  options: { translationEnabled?: boolean; transcriptEnabled?: boolean } = {}
 ): Promise<{ callId: string }> {
   try {
     const functions = getFunctions(app, 'us-central1');
 
-    const startCall = httpsCallable<{ receiverId: string, offerId: string }, StartCallResult>(
+    const startCall = httpsCallable<{ 
+      receiverId: string, 
+      offerId: string,
+      translationEnabled?: boolean,
+      transcriptEnabled?: boolean
+    }, StartCallResult>(
       functions,
       'startCall'
     );
 
-    // ВІДПРАВКА ДАНИХ
-    const res = await startCall({ receiverId, offerId });
+    const res = await startCall({ 
+      receiverId, 
+      offerId, 
+      translationEnabled: options.translationEnabled,
+      transcriptEnabled: options.transcriptEnabled
+    });
     const data = res.data;
 
     if (!data?.callId || !data?.token || !data?.roomUrl) {
@@ -56,7 +63,6 @@ export async function startVideoCall(
 
     const { callId, roomUrl, token } = data;
 
-    // Зберігаємо ключі доступу в сесію для сторінки виклику
     sessionStorage.setItem(`dailyToken:${callId}`, token);
     sessionStorage.setItem(`dailyRoomUrl:${callId}`, roomUrl);
 
