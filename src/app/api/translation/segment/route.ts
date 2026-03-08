@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -5,7 +6,7 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
  * Performs translation using Azure Translator API v3.0.
- * Uses regional resources if configured.
+ * Uses regional resources if configured correctly.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
@@ -17,7 +18,8 @@ async function translateText(text: string, targetLocale: string): Promise<string
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  const to = targetLocale.split('-')[0]; // Simple BCP-47 to language code mapping (e.g., uk-UA -> uk)
+  // Simple BCP-47 to language code mapping (e.g., uk-UA -> uk)
+  const to = targetLocale.split('-')[0]; 
 
   try {
     const res = await fetch(`${endpoint}&to=${to}`, {
@@ -44,7 +46,7 @@ async function translateText(text: string, targetLocale: string): Promise<string
 
 /**
  * Processes a recognized speech segment: translates it and stores in Firestore.
- * Uses atomic transaction to manage global sequence number.
+ * Uses atomic transaction to manage global sequence number for perfect ordering.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
     
     // Guard: ensure translation is actually enabled for this session
     if (!translationData.enabled) {
-      return NextResponse.json({ error: 'Translation disabled' }, { status: 403 });
+      return NextResponse.json({ error: 'Translation disabled for this call' }, { status: 403 });
     }
 
     const participants = translationData.participants || {};
@@ -81,19 +83,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
     }
 
-    // 2. Perform translation
+    // 2. Perform translation via Azure
     const translatedText = await translateText(text, speakerData.targetLocale);
 
     // 3. Atomic Transaction for Sequence + Metrics
+    // Ensures perfect order even if both participants speak simultaneously
     const result = await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
       
       const data = freshSnap.data()!;
-      // Use nextSequence counter for guaranteed order
+      // Use nextSequence counter for guaranteed order across clients
       const currentSequence = data.nextSequence || 1;
 
       const segmentsRef = translationRef.collection('segments');
+      // Doc ID includes sequence for easier debugging and natural order
       const segmentDocRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
 
       const segmentData = {
@@ -116,7 +120,7 @@ export async function POST(request: NextRequest) {
       transaction.set(segmentDocRef, segmentData);
       transaction.update(translationRef, {
         nextSequence: currentSequence + 1,
-        'metrics.totalSegments': currentSequence,
+        'metrics.totalSegments': FieldValue.increment(1),
         'metrics.finalSegments': FieldValue.increment(1),
         lastSegmentAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),

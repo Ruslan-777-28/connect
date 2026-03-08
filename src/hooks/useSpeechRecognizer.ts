@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -90,7 +91,7 @@ export function useSpeechRecognizer({
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // 1. recognizing -> Local UI preview
+      // 1. recognizing -> Local UI preview (minimal throttling)
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
         if (text && text.length >= 2 && onRecognizing) {
@@ -98,12 +99,13 @@ export function useSpeechRecognizer({
         }
       };
 
-      // 2. recognized -> Phrase accumulation
+      // 2. recognized -> Phrase accumulation with deduplication
       activeRecognizer.recognized = (_: any, event: any) => {
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
           const text = event.result.text?.trim();
           if (text && text.length > 1) {
-            // Deduplication guard: don't add if already in buffer
+            // Deduplication guard: check if this text is already at the end of buffer
+            // Azure sometimes repeats parts of speech in 'recognized' events
             const currentBuffer = bufferRef.current.trim();
             if (!currentBuffer.endsWith(text)) {
               bufferRef.current += (bufferRef.current ? " " : "") + text;
