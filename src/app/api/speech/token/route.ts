@@ -2,8 +2,8 @@
 import { NextResponse } from 'next/server';
 
 /**
- * Issues a short-lived authorization token for Azure Speech SDK.
- * This prevents exposing the API key to the client side.
+ * Видає короткоживучий токен для Azure Speech SDK.
+ * Запобігає витоку ключа API на клієнтську сторону.
  */
 export async function GET() {
   try {
@@ -11,6 +11,7 @@ export async function GET() {
     const region = process.env.AZURE_SPEECH_REGION;
 
     if (!key || !region) {
+      console.error('Azure Speech credentials missing in environment');
       return NextResponse.json({ error: 'Azure Speech credentials not configured' }, { status: 500 });
     }
 

@@ -1,8 +1,8 @@
+
 import * as SpeechSDK from 'microsoft-cognitiveservices-speech-sdk';
 
 /**
- * Initializes an Azure Speech Recognizer instance using a temporary token.
- * Includes production-ready settings: TrueText, Dictation, and locale selection.
+ * Ініціалізує екземпляр Azure Speech Recognizer за допомогою тимчасового токена.
  */
 export async function createRecognizer(locale: string) {
   const tokenRes = await fetch('/api/speech/token');
@@ -17,19 +17,19 @@ export async function createRecognizer(locale: string) {
     region
   );
 
+  // Встановлюємо мову розпізнавання (наприклад, uk-UA)
   speechConfig.speechRecognitionLanguage = locale;
 
-  // Enable TrueText for punctuation, capitalization and sentence normalization
-  // This significantly improves translation quality by providing structured sentences.
+  // Вмикаємо TrueText для автоматичної пунктуації та нормалізації тексту
   speechConfig.setProperty(
     'SpeechServiceResponse_PostProcessingOption',
     'TrueText'
   );
 
-  // Enable dictation mode for more natural handling of pauses and phrasing
+  // Режим диктування для кращого розпізнавання пауз та природного мовлення
   speechConfig.enableDictation();
 
-  // Use the default microphone input for recording
+  // Використовуємо стандартний мікрофон
   const audioConfig = SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
 
   const recognizer = new SpeechSDK.SpeechRecognizer(

@@ -40,7 +40,6 @@ export default function CallRoomPage() {
   const [showCaptions, setShowCaptions] = useState(true);
   const [localPreviewText, setLocalPreviewText] = useState("");
 
-  // 1. Hook into the translation state and segments
   const { translation, segments, status: translationStatus } = useCallTranslation(callId);
 
   const token = useMemo(() => sessionStorage.getItem(`dailyToken:${callId}`), [callId]);
@@ -77,14 +76,15 @@ export default function CallRoomPage() {
     await endCallClient(app, callId, 'ended');
   }, [app, callId]);
 
-  // 2. Setup Speech Recognition
+  // 1. Setup Speech Recognition (Batch 3.1 focusing on console log)
   const myProfileId = user?.uid;
   const myConfig = translation?.participants?.[myProfileId || ''];
   
   const handleRecognized = useCallback(async (text: string) => {
-    if (!myProfileId || !callId) return;
+    // В Batch 3.1 ми просто логуємо текст у консоль
+    console.log(`[CallRoom] Recognized phrase for ${myProfileId}: ${text}`);
     
-    // Send recognized text to the translation pipeline
+    // Тимчасово залишимо виклик API, але головне - консоль
     try {
       await fetch('/api/translation/segment', {
         method: 'POST',
@@ -100,7 +100,6 @@ export default function CallRoomPage() {
     }
   }, [callId, myProfileId]);
 
-  // The recognizer only runs if translation is enabled and we have our config (source locale)
   useSpeechRecognizer({
     enabled: !!(callData?.translationEnabled && status === 'accepted' && myConfig),
     sourceLocale: myConfig?.sourceLocale || 'uk-UA',
@@ -127,7 +126,6 @@ export default function CallRoomPage() {
           hardExitToHome();
         }
 
-        // AUTO-START Translation session if enabled and call is accepted
         if (data.status === 'accepted' && data.translationEnabled && translationStatus === 'idle') {
           fetch(`/api/calls/${callId}/translation/start`, { method: 'POST' }).catch(console.error);
         }
@@ -142,10 +140,7 @@ export default function CallRoomPage() {
   }, [callId, firestore, hardExitToHome, leaveAndDestroy, translationStatus]);
 
   useEffect(() => {
-    if (!urlWithToken) {
-      hardExitToHome();
-      return;
-    }
+    if (!urlWithToken) return;
     const container = containerRef.current;
     if (!container) return;
   
@@ -198,7 +193,6 @@ export default function CallRoomPage() {
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3 p-3 border-b bg-background/95 backdrop-blur-md z-20">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-muted/50 px-2 py-1 rounded">
@@ -236,12 +230,10 @@ export default function CallRoomPage() {
       </div>
 
       <div className="flex flex-1 relative overflow-hidden bg-muted/20 p-2 sm:p-4">
-        {/* Daily Iframe Container */}
         <div className="flex-1 h-full w-full">
           <div ref={containerRef} className="h-full w-full" />
         </div>
 
-        {/* Captions Panel Overlay */}
         {translation?.enabled && showCaptions && (
           <div className={cn(
             "absolute right-4 bottom-24 top-20 w-full max-w-[320px] z-10 transition-all duration-500 ease-in-out",

@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -12,10 +13,7 @@ interface UseSpeechRecognizerParams {
 }
 
 /**
- * Hook to manage the lifecycle of Azure Speech Recognition during a call.
- * Implements a hybrid buffering strategy:
- * 1. Low-latency local preview (recognizing)
- * 2. Smart buffering for final segments (recognized) to improve translation quality and reduce writes.
+ * Хук для керування життєвим циклом розпізнавання мовлення під час дзвінка.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -24,150 +22,93 @@ export function useSpeechRecognizer({
   onRecognizing
 }: UseSpeechRecognizerParams) {
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
-  const bufferRef = useRef("");
-  const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Watchdog state to recover from silent hangs
-  const lastEventAtRef = useRef<number>(Date.now());
-  const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isRestartingRef = useRef(false);
-
-  const flushBuffer = useCallback(() => {
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-
-    const text = bufferRef.current.trim();
-    if (!text || text.length < 2) {
-      bufferRef.current = "";
-      return;
-    }
-
-    console.info('[SpeechRecognizer] Flushing phrase buffer:', { length: text.length });
-    onRecognized(text);
-    bufferRef.current = "";
-    
-    if (onRecognizing) {
-      onRecognizing("");
-    }
-  }, [onRecognized, onRecognizing]);
-
-  const scheduleFlush = useCallback(() => {
-    if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
-    flushTimerRef.current = setTimeout(() => {
-      flushBuffer();
-    }, 1800); // 1.8 seconds silence trigger
-  }, [flushBuffer]);
+  const isStartingRef = useRef(false);
 
   const stopRecognizer = useCallback(async () => {
     if (recognizerRef.current) {
-      console.info('[SpeechRecognizer] Stopping recognizer...');
+      console.info('[SpeechRecognizer] Зупинка recognizer...');
       try {
         await new Promise<void>((resolve) => {
-          recognizerRef.current?.stopContinuousRecognitionAsync(() => resolve(), () => resolve());
+          recognizerRef.current?.stopContinuousRecognitionAsync(
+            () => {
+              recognizerRef.current?.close();
+              resolve();
+            },
+            (err) => {
+              console.warn('[SpeechRecognizer] Помилка зупинки:', err);
+              resolve();
+            }
+          );
         });
       } catch (e) {
-        console.warn('[SpeechRecognizer] Stop error:', e);
+        console.warn('[SpeechRecognizer] Помилка при закритті:', e);
       }
       recognizerRef.current = null;
     }
   }, []);
 
-  const restartRecognizer = useCallback(async () => {
-    if (isRestartingRef.current) return;
-    isRestartingRef.current = true;
-    
-    console.info('[SpeechRecognizer] Reconnecting...');
-    await stopRecognizer();
-    await startRecognizer();
-    
-    isRestartingRef.current = false;
-  }, [stopRecognizer]);
-
   const startRecognizer = useCallback(async () => {
-    if (!enabled || !sourceLocale) return;
+    if (!enabled || !sourceLocale || isStartingRef.current) return;
     
-    console.info('[SpeechRecognizer] Starting session...', { locale: sourceLocale });
-    lastEventAtRef.current = Date.now();
+    isStartingRef.current = true;
+    console.info('[SpeechRecognizer] Запуск сесії розпізнавання...', { locale: sourceLocale });
 
     try {
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
+      // Проміжне розпізнавання (preview)
       activeRecognizer.recognizing = (_: any, event: any) => {
-        lastEventAtRef.current = Date.now();
         const text = event.result.text;
         if (text && onRecognizing) {
           onRecognizing(text);
         }
       };
 
+      // Фінальне розпізнавання речення
       activeRecognizer.recognized = (_: any, event: any) => {
-        lastEventAtRef.current = Date.now();
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
           const text = event.result.text;
-          if (!text || text.trim().length < 2) return;
-
-          console.debug('[SpeechRecognizer] Chunk recognized:', text);
-          bufferRef.current += (bufferRef.current ? " " : "") + text.trim();
-
-          // Flush immediately if punctuation detected
-          if (/[.?!]$/.test(text.trim())) {
-            flushBuffer();
-          } else {
-            scheduleFlush();
+          if (text && text.trim().length > 1) {
+            console.log('[SpeechRecognizer] Фінальна фраза:', text);
+            onRecognized(text);
           }
         }
       };
 
       activeRecognizer.canceled = (s: any, e: any) => {
-        console.warn('[SpeechRecognizer] Canceled:', e.reason);
-        if (e.reason === SpeechSDK.CancellationReason.Error) {
-          restartRecognizer();
-        }
+        console.warn('[SpeechRecognizer] Скасовано:', e.reason, e.errorDetails);
       };
 
       activeRecognizer.startContinuousRecognitionAsync(
-        () => console.info('[SpeechRecognizer] Recognition active'),
-        (err) => console.error('[SpeechRecognizer] Start failed', err)
+        () => {
+          console.info('[SpeechRecognizer] Розпізнавання активне');
+          isStartingRef.current = false;
+        },
+        (err) => {
+          console.error('[SpeechRecognizer] Помилка старту:', err);
+          isStartingRef.current = false;
+        }
       );
     } catch (err) {
-      console.error('[SpeechRecognizer] Init error:', err);
+      console.error('[SpeechRecognizer] Помилка ініціалізації:', err);
+      isStartingRef.current = false;
     }
-  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush, restartRecognizer]);
-
-  // Watchdog & Reconnection
-  useEffect(() => {
-    if (!enabled) return;
-
-    watchdogTimerRef.current = setInterval(() => {
-      if (Date.now() - lastEventAtRef.current > 45000 && !isRestartingRef.current) {
-        restartRecognizer();
-      }
-    }, 15000);
-
-    const handleOnline = () => restartRecognizer();
-    window.addEventListener('online', handleOnline);
-
-    return () => {
-      if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
-      window.removeEventListener('online', handleOnline);
-    };
-  }, [enabled, restartRecognizer]);
+  }, [enabled, sourceLocale, onRecognized, onRecognizing]);
 
   useEffect(() => {
     if (enabled) {
       startRecognizer();
     } else {
-      stopRecognizer().then(() => flushBuffer());
+      stopRecognizer();
     }
 
     return () => {
       stopRecognizer();
-      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
-  }, [enabled, sourceLocale, startRecognizer, stopRecognizer, flushBuffer]);
+  }, [enabled, sourceLocale, startRecognizer, stopRecognizer]);
 
-  return { restart: restartRecognizer };
+  return { 
+    recognizer: recognizerRef.current 
+  };
 }
