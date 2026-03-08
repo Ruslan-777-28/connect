@@ -1,8 +1,9 @@
+
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { doc, collection, query, where, limit } from 'firebase/firestore';
-import { Home, User, LogOut, LogIn, UserPlus, MessageSquare, Bell } from 'lucide-react';
+import { Home, User, LogOut, LogIn, UserPlus, MessageSquare, Bell, History } from 'lucide-react';
 import {
   useUser,
   useAuth,
@@ -72,6 +73,7 @@ export function SidebarNav() {
     ? [
         { href: '/', label: 'Home', icon: Home },
         { href: '/chats', label: 'Chats', icon: MessageSquare },
+        { href: '/history', label: 'History', icon: History },
         { href: '/notifications', label: 'Notifications', icon: Bell, hasUnread },
         { href: '/profile', label: 'Profile', icon: User },
       ]

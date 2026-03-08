@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useMemo } from 'react';
@@ -7,7 +8,7 @@ import { ProfileForm } from '@/components/profile-form';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { UserProfile, CommunicationOffer, Post, DigitalProduct } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Video, FileText, HelpCircle, Edit2, Layout, Package } from 'lucide-react';
+import { Video, FileText, HelpCircle, Edit2, Layout, Package, History } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/carousel";
 import { PostCard } from '@/components/post-card';
 import { ProductCard } from '@/components/product-card';
+import Link from 'next/link';
 
 export default function ProfilePage() {
   const { user, isUserLoading } = useUser();
@@ -86,9 +88,16 @@ export default function ProfilePage() {
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 pb-32">
-      <h1 className="mb-8 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-        Мій профіль
-      </h1>
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          Мій профіль
+        </h1>
+        <Button variant="outline" className="rounded-full shadow-sm" asChild>
+          <Link href="/history">
+            <History className="mr-2 h-4 w-4" /> Історія сесій
+          </Link>
+        </Button>
+      </div>
       
       <div className="grid gap-12">
         <Card>

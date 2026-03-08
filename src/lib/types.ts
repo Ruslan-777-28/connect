@@ -166,6 +166,8 @@ export type Call = CommunicationRequest & {
   caller?: UserProfile;
   translationEnabled?: boolean;
   transcriptEnabled?: boolean;
+  transcriptUrl?: string;
+  transcriptGenerated?: boolean;
 };
 
 export type Post = {

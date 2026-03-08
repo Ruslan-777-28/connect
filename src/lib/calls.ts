@@ -25,6 +25,10 @@ export async function endCallClient(
       { ok: true; alreadyEnded?: true }
     >(functions, 'endCall');
     await endCall({ callId, reason });
+
+    // PHASE 5: Trigger transcript generation after call ends
+    fetch(`/api/calls/${callId}/transcript/generate`, { method: 'POST' }).catch(console.error);
+    
   } catch (error) {
     console.error(`Failed to end call ${callId} with reason ${reason}:`, error);
   }
