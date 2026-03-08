@@ -14,10 +14,7 @@ interface UseSpeechRecognizerParams {
 
 /**
  * Hook to manage the lifecycle of Azure Speech Recognition during a call.
- * Implements a hybrid phrase buffering strategy:
- * 1. Intermediate results (recognizing) are sent to onRecognizing for local preview.
- * 2. Final results (recognized) are buffered for ~1.8s or until punctuation is found
- *    to create meaningful sentences for better translation and fewer Firestore writes.
+ * PHASE 4: Production Hardening - Reconnection, Watchdog, and Structured Logging.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -28,8 +25,12 @@ export function useSpeechRecognizer({
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const bufferRef = useRef("");
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Watchdog state
+  const lastEventAtRef = useRef<number>(Date.now());
+  const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isRestartingRef = useRef(false);
 
-  // Memoized function to flush the buffer and send the complete phrase
   const flushBuffer = useCallback(() => {
     if (flushTimerRef.current) {
       clearTimeout(flushTimerRef.current);
@@ -39,91 +40,150 @@ export function useSpeechRecognizer({
     const text = bufferRef.current.trim();
     if (!text) return;
 
+    console.debug('[SpeechRecognizer] Flushing buffer:', { textLength: text.length });
     bufferRef.current = "";
     onRecognized(text);
     
-    // Clear preview when a final segment is confirmed and buffered
     if (onRecognizing) {
       onRecognizing("");
     }
   }, [onRecognized, onRecognizing]);
 
-  // Helper to schedule a buffer flush after a period of silence
   const scheduleFlush = useCallback(() => {
     if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     flushTimerRef.current = setTimeout(() => {
       flushBuffer();
-    }, 1800); // 1.8 seconds of silence before flushing
+    }, 1800);
   }, [flushBuffer]);
 
-  useEffect(() => {
-    if (!enabled || !sourceLocale) {
-      if (recognizerRef.current) {
-        recognizerRef.current.stopContinuousRecognitionAsync();
-        recognizerRef.current = null;
+  const stopRecognizer = useCallback(async () => {
+    if (recognizerRef.current) {
+      console.info('[SpeechRecognizer] Stopping recognizer...');
+      try {
+        await new Promise<void>((resolve) => {
+          recognizerRef.current?.stopContinuousRecognitionAsync(() => resolve(), () => resolve());
+        });
+      } catch (e) {
+        console.warn('[SpeechRecognizer] Error during stop:', e);
       }
-      // Ensure we flush any remaining text when stopping
-      flushBuffer();
+      recognizerRef.current = null;
+    }
+  }, []);
+
+  const startRecognizer = useCallback(async () => {
+    if (!enabled || !sourceLocale) return;
+    
+    console.info('[SpeechRecognizer] Starting recognizer...', { locale: sourceLocale });
+    lastEventAtRef.current = Date.now();
+
+    try {
+      const activeRecognizer = await createRecognizer(sourceLocale);
+      recognizerRef.current = activeRecognizer;
+
+      activeRecognizer.recognizing = (_: any, event: any) => {
+        lastEventAtRef.current = Date.now();
+        const text = event.result.text;
+        if (text && onRecognizing) {
+          onRecognizing(text);
+        }
+      };
+
+      activeRecognizer.recognized = (_: any, event: any) => {
+        lastEventAtRef.current = Date.now();
+        if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
+          const text = event.result.text;
+          if (!text || text.trim().length < 2) return;
+
+          console.debug('[SpeechRecognizer] Chunk recognized:', { text });
+          bufferRef.current += (bufferRef.current ? " " : "") + text.trim();
+
+          if (/[.?!]$/.test(text.trim())) {
+            flushBuffer();
+          } else {
+            scheduleFlush();
+          }
+        }
+      };
+
+      activeRecognizer.canceled = (s: any, e: any) => {
+        console.warn('[SpeechRecognizer] Canceled:', { reason: e.reason, details: e.errorDetails });
+        if (e.reason === SpeechSDK.CancellationReason.Error) {
+          // Trigger restart on error
+          restartRecognizer();
+        }
+      };
+
+      activeRecognizer.sessionStarted = () => console.info('[SpeechRecognizer] Azure session started');
+      activeRecognizer.sessionStopped = () => console.info('[SpeechRecognizer] Azure session stopped');
+
+      activeRecognizer.startContinuousRecognitionAsync(
+        () => console.info('[SpeechRecognizer] Continuous recognition service online'),
+        (err) => console.error('[SpeechRecognizer] Failed to start service', err)
+      );
+    } catch (err) {
+      console.error('[SpeechRecognizer] Initialization error:', err);
+    }
+  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
+
+  const restartRecognizer = useCallback(async () => {
+    if (isRestartingRef.current) return;
+    isRestartingRef.current = true;
+    
+    console.info('[SpeechRecognizer] Triggering restart sequence...');
+    await stopRecognizer();
+    await startRecognizer();
+    
+    isRestartingRef.current = false;
+  }, [stopRecognizer, startRecognizer]);
+
+  // Watchdog effect: Azure streams can sometimes hang silently
+  useEffect(() => {
+    if (!enabled) {
+      if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
       return;
     }
 
-    let activeRecognizer: SpeechSDK.SpeechRecognizer | null = null;
-
-    async function start() {
-      try {
-        activeRecognizer = await createRecognizer(sourceLocale);
-        recognizerRef.current = activeRecognizer;
-
-        activeRecognizer.recognizing = (_: any, event: any) => {
-          const text = event.result.text;
-          if (text && onRecognizing) {
-            onRecognizing(text);
-          }
-        };
-
-        activeRecognizer.recognized = (_: any, event: any) => {
-          if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-            const text = event.result.text;
-            if (!text || text.trim().length < 2) return;
-
-            // Accumulate chunks in the buffer
-            bufferRef.current += (bufferRef.current ? " " : "") + text.trim();
-
-            // Optimization: If the phrase ends with terminal punctuation, flush immediately.
-            // This makes the UI feel more responsive for natural sentence endings.
-            if (/[.?!]$/.test(text.trim())) {
-              flushBuffer();
-            } else {
-              // Otherwise, wait for a pause to see if the speaker continues the thought
-              scheduleFlush();
-            }
-          }
-        };
-
-        activeRecognizer.canceled = (s: any, e: any) => {
-          console.warn(`Speech recognition canceled: ${e.errorDetails}`);
-          if (e.reason === SpeechSDK.CancellationReason.Error) {
-            activeRecognizer?.stopContinuousRecognitionAsync();
-          }
-        };
-
-        activeRecognizer.startContinuousRecognitionAsync(
-          () => console.log('Speech recognition started'),
-          (err) => console.error('Failed to start speech recognition', err)
-        );
-      } catch (err) {
-        console.error('Recognizer initialization error:', err);
+    watchdogTimerRef.current = setInterval(() => {
+      const idleTime = Date.now() - lastEventAtRef.current;
+      // If idle for 45s while enabled, something might be wrong with the stream
+      if (idleTime > 45000 && !isRestartingRef.current) {
+        console.warn('[SpeechRecognizer] Watchdog: No speech events for 45s, restarting stream...');
+        restartRecognizer();
       }
-    }
-
-    start();
+    }, 15000);
 
     return () => {
-      if (activeRecognizer) {
-        activeRecognizer.stopContinuousRecognitionAsync();
-        recognizerRef.current = null;
-      }
+      if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
+    };
+  }, [enabled, restartRecognizer]);
+
+  // Network online listener: Restart when connection is restored
+  useEffect(() => {
+    const handleOnline = () => {
+      console.info('[SpeechRecognizer] Network connection restored, reconnecting...');
+      restartRecognizer();
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [restartRecognizer]);
+
+  // Main lifecycle effect
+  useEffect(() => {
+    if (enabled) {
+      startRecognizer();
+    } else {
+      stopRecognizer().then(() => flushBuffer());
+    }
+
+    return () => {
+      stopRecognizer();
+      if (watchdogTimerRef.current) clearInterval(watchdogTimerRef.current);
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
-  }, [enabled, sourceLocale, onRecognized, onRecognizing, flushBuffer, scheduleFlush]);
+  }, [enabled, sourceLocale, startRecognizer, stopRecognizer, flushBuffer]);
+
+  return {
+    restart: restartRecognizer
+  };
 }
