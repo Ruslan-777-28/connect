@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
- * Виконує переклад за допомогою Azure Translator API.
+ * Виконує переклад за допомогою Azure Translator API v3.0.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
   const region = process.env.AZURE_TRANSLATOR_REGION;
   
   if (!key) {
-    console.warn('AZURE_TRANSLATOR_KEY не налаштовано, повертаємо оригінал.');
+    console.warn('AZURE_TRANSLATOR_KEY missing, returning original text');
     return text;
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  // Отримуємо ISO 639-1 код (наприклад, 'uk' з 'uk-UA')
+  // Get ISO 639-1 code (e.g., 'uk' from 'uk-UA')
   const to = targetLocale.split('-')[0];
 
   try {
@@ -43,7 +43,7 @@ async function translateText(text: string, targetLocale: string): Promise<string
 }
 
 /**
- * Обробляє розпізнаний сегмент мовлення: перекладає та зберігає у Firestore.
+ * Обробляє розпізнаний сегмент мовлення: перекладає та зберігає у Firestore з серверною чергою.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -53,60 +53,65 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Отримуємо конфігурацію сесії перекладу
-    const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
-    const translationSnap = await translationRef.get();
+    // Використовуємо транзакцію для гарантування послідовності (sequence)
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
+      const translationSnap = await transaction.get(translationRef);
 
-    if (!translationSnap.exists) {
-      return NextResponse.json({ error: 'Translation session not found' }, { status: 404 });
-    }
+      if (!translationSnap.exists) {
+        throw new Error('Translation session not found');
+      }
 
-    const translationData = translationSnap.data()!;
-    const speakerData = translationData.participants?.[speakerId];
+      const translationData = translationSnap.data()!;
+      const speakerData = translationData.participants?.[speakerId];
 
-    if (!speakerData) {
-      return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
-    }
+      if (!speakerData) {
+        throw new Error('Speaker configuration not found');
+      }
 
-    const { sourceLocale, targetLocale } = speakerData;
+      // 1. Виконуємо переклад
+      const translatedText = await translateText(text, speakerData.targetLocale);
 
-    // 2. Виконуємо переклад
-    const translatedText = await translateText(text, targetLocale);
+      // 2. Визначаємо наступний порядковий номер
+      const currentSequence = translationData.metrics?.totalSegments || 0;
+      const nextSequence = currentSequence + 1;
 
-    // 3. Зберігаємо сегмент з підтримкою sequence для правильного сортування
-    const segmentsRef = translationRef.collection('segments');
-    const sequence = (translationData.metrics?.totalSegments || 0) + 1;
+      // 3. Підготовлюємо документ сегмента
+      const segmentsRef = translationRef.collection('segments');
+      const segmentDocRef = segmentsRef.doc(); // Створюємо новий ID
 
-    const segmentData = {
-      callId,
-      speakerUid: speakerId,
-      speakerRole: speakerData.role,
-      speakerDisplayName: speakerData.displayName,
-      sourceLocale,
-      targetLocale,
-      originalText: text,
-      translatedText,
-      isFinal: true,
-      sequence,
-      emittedAt: FieldValue.serverTimestamp(),
-      finalizedAt: FieldValue.serverTimestamp(),
-      provider: 'azure_speech',
-      status: 'final',
-    };
+      const segmentData = {
+        callId,
+        speakerUid: speakerId,
+        speakerRole: speakerData.role,
+        speakerDisplayName: speakerData.displayName,
+        sourceLocale: speakerData.sourceLocale,
+        targetLocale: speakerData.targetLocale,
+        originalText: text,
+        translatedText,
+        isFinal: true,
+        sequence: nextSequence,
+        emittedAt: FieldValue.serverTimestamp(),
+        finalizedAt: FieldValue.serverTimestamp(),
+        provider: 'azure_speech',
+        status: 'final',
+      };
 
-    await segmentsRef.add(segmentData);
+      // 4. Виконуємо запис сегмента та оновлення метрик атомарно
+      transaction.set(segmentDocRef, segmentData);
+      transaction.update(translationRef, {
+        'metrics.totalSegments': nextSequence,
+        'metrics.finalSegments': FieldValue.increment(1),
+        lastSegmentAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
 
-    // 4. Оновлюємо метрики сесії
-    await translationRef.update({
-      'metrics.totalSegments': FieldValue.increment(1),
-      'metrics.finalSegments': FieldValue.increment(1),
-      lastSegmentAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      return { translatedText, sequence: nextSequence };
     });
 
-    return NextResponse.json({ ok: true, translatedText });
-  } catch (error) {
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error: any) {
     console.error('Segment processing failed:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }

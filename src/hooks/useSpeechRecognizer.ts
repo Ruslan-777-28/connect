@@ -31,7 +31,7 @@ export function useSpeechRecognizer({
   const flushBuffer = useCallback(() => {
     const text = bufferRef.current.trim();
     if (text.length > 1) {
-      console.log('[SpeechRecognizer] Flushing buffer:', text);
+      console.log('[SpeechRecognizer] Flushing phrase buffer:', text);
       onRecognized(text);
     }
     bufferRef.current = "";
@@ -86,7 +86,7 @@ export function useSpeechRecognizer({
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // Проміжне розпізнавання (preview) - додаємо throttle
+      // Проміжне розпізнавання (preview)
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
         if (text && text.length >= 2 && onRecognizing) {
@@ -138,7 +138,7 @@ export function useSpeechRecognizer({
   }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
 
   useEffect(() => {
-    // Force stop before starting a new one (prevents leaks on locale change)
+    // Force stop before starting a new one
     stopRecognizer();
 
     if (enabled) {
@@ -149,7 +149,7 @@ export function useSpeechRecognizer({
       stopRecognizer();
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
-  }, [enabled, sourceLocale]); // Removed startRecognizer/stopRecognizer from deps to avoid re-triggering logic
+  }, [enabled, sourceLocale]); 
 
   return { 
     recognizer: recognizerRef.current 
