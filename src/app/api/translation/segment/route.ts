@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
@@ -12,13 +11,12 @@ async function translateText(text: string, targetLocale: string): Promise<string
   const region = process.env.AZURE_TRANSLATOR_REGION;
   
   if (!key) {
-    // Fallback or development warning
-    console.warn('AZURE_TRANSLATOR_KEY not configured');
-    return `[Translated to ${targetLocale}] ${text}`;
+    console.warn('AZURE_TRANSLATOR_KEY not configured, returning original text.');
+    return text;
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  // Extract ISO 639-1 code from BCP-47
+  // Extract ISO 639-1 code (e.g., 'uk' from 'uk-UA')
   const to = targetLocale.split('-')[0];
 
   try {
@@ -32,16 +30,21 @@ async function translateText(text: string, targetLocale: string): Promise<string
       body: JSON.stringify([{ Text: text }])
     });
 
+    if (!res.ok) {
+      throw new Error(`Azure Translator Error: ${res.status}`);
+    }
+
     const json = await res.json();
     return json[0].translations[0].text;
   } catch (error) {
     console.error('Azure Translation failed:', error);
-    return text; // Return original on failure
+    return text; 
   }
 }
 
 /**
- * Handles translation of a single recognized phrase and saves it to Firestore.
+ * Handles processing of a recognized speech segment: 
+ * Translates it and stores it in Firestore for the other participant to see.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -51,7 +54,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // 1. Get translation configuration from Firestore
+    // 1. Get translation configuration
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
     const translationSnap = await translationRef.get();
 
@@ -60,10 +63,10 @@ export async function POST(request: NextRequest) {
     }
 
     const translationData = translationSnap.data()!;
-    const speakerData = translationData.participants[speakerId];
+    const speakerData = translationData.participants?.[speakerId];
 
     if (!speakerData) {
-      return NextResponse.json({ error: 'Speaker not found in session' }, { status: 404 });
+      return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
     }
 
     const { sourceLocale, targetLocale } = speakerData;
@@ -71,10 +74,8 @@ export async function POST(request: NextRequest) {
     // 2. Perform translation
     const translatedText = await translateText(sourceText, targetLocale);
 
-    // 3. Save the translation segment to Firestore subcollection
+    // 3. Save segment with sequence tracking
     const segmentsRef = translationRef.collection('segments');
-    
-    // Use an atomic increment for sequence tracking
     const sequence = (translationData.metrics?.totalSegments || 0) + 1;
 
     const segmentData = {
@@ -90,13 +91,13 @@ export async function POST(request: NextRequest) {
       sequence,
       emittedAt: FieldValue.serverTimestamp(),
       finalizedAt: FieldValue.serverTimestamp(),
-      provider: 'azure_translator',
+      provider: 'azure_speech',
       status: 'final',
     };
 
-    const segmentRef = await segmentsRef.add(segmentData);
+    await segmentsRef.add(segmentData);
 
-    // 4. Update the main translation document with new metrics
+    // 4. Update session metrics
     await translationRef.update({
       'metrics.totalSegments': FieldValue.increment(1),
       'metrics.finalSegments': FieldValue.increment(1),
@@ -104,13 +105,9 @@ export async function POST(request: NextRequest) {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    return NextResponse.json({
-      ok: true,
-      segmentId: segmentRef.id,
-      translatedText,
-    });
+    return NextResponse.json({ ok: true, translatedText });
   } catch (error) {
-    console.error('Translation segment processing failed:', error);
+    console.error('Segment processing failed:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
