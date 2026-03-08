@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -15,9 +14,9 @@ interface UseSpeechRecognizerParams {
 /**
  * Manages the lifecycle of Azure Speech Recognition during a call.
  * 
- * Logic Batch 3.2:
+ * Logic:
  * 1. recognizing -> Local UI preview only (throttled).
- * 2. recognized -> Accumulates into buffer.
+ * 2. recognized -> Accumulates into buffer with deduplication.
  * 3. flush -> Triggers on punctuation (.?!) or 1.8s silence.
  */
 export function useSpeechRecognizer({
@@ -91,10 +90,9 @@ export function useSpeechRecognizer({
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // 1. recognizing -> High-frequency local UI preview
+      // 1. recognizing -> Local UI preview
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
-        // Basic throttle to avoid React render spam
         if (text && text.length >= 2 && onRecognizing) {
           onRecognizing(text);
         }
@@ -103,12 +101,16 @@ export function useSpeechRecognizer({
       // 2. recognized -> Phrase accumulation
       activeRecognizer.recognized = (_: any, event: any) => {
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
-          const text = event.result.text;
-          if (text && text.trim().length > 1) {
-            bufferRef.current += " " + text.trim();
+          const text = event.result.text?.trim();
+          if (text && text.length > 1) {
+            // Deduplication guard: don't add if already in buffer
+            const currentBuffer = bufferRef.current.trim();
+            if (!currentBuffer.endsWith(text)) {
+              bufferRef.current += (bufferRef.current ? " " : "") + text;
+            }
             
-            // If phrase ends with punctuation, flush immediately for responsiveness
-            if (/[.?!]$/.test(text.trim())) {
+            // If phrase ends with punctuation, flush immediately
+            if (/[.?!]$/.test(text)) {
               flushBuffer();
             } else {
               // Otherwise, wait for silence to gather full context
@@ -152,7 +154,7 @@ export function useSpeechRecognizer({
       stopRecognizer();
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
-  }, [enabled, sourceLocale]); 
+  }, [enabled, sourceLocale, startRecognizer, stopRecognizer]); 
 
   return { 
     recognizer: recognizerRef.current 

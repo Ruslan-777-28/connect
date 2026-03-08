@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -25,7 +24,7 @@ async function translateText(text: string, targetLocale: string): Promise<string
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": key,
-        "Ocp-Apim-Subscription-Region": region || "",
+        ...(region ? { "Ocp-Apim-Subscription-Region": region } : {}),
         "Content-Type": "application/json"
       },
       body: JSON.stringify([{ Text: text }])
@@ -51,7 +50,12 @@ export async function POST(request: NextRequest) {
   try {
     const { callId, speakerId, text } = await request.json();
 
-    if (!callId || !speakerId || !text) {
+    // Guard: ignore empty or whitespace-only text
+    if (!text?.trim()) {
+      return NextResponse.json({ ok: true, skipped: 'empty' });
+    }
+
+    if (!callId || !speakerId) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -64,6 +68,12 @@ export async function POST(request: NextRequest) {
     }
 
     const translationData = translationSnap.data()!;
+    
+    // Guard: ensure translation is actually enabled for this session
+    if (!translationData.enabled) {
+      return NextResponse.json({ error: 'Translation disabled' }, { status: 403 });
+    }
+
     const participants = translationData.participants || {};
     const speakerData = participants[speakerId];
 
@@ -80,8 +90,8 @@ export async function POST(request: NextRequest) {
       if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
       
       const data = freshSnap.data()!;
-      // Handle missing nextSequence for older docs
-      const currentSequence = data.nextSequence || (data.metrics?.totalSegments || 0) + 1;
+      // Use nextSequence counter for guaranteed order
+      const currentSequence = data.nextSequence || 1;
 
       const segmentsRef = translationRef.collection('segments');
       const segmentDocRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
