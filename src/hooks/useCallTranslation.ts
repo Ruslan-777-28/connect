@@ -1,13 +1,15 @@
+
 'use client';
 
 import { useMemoFirebase, useDoc, useCollection } from '@/firebase';
-import { query, orderBy } from 'firebase/firestore';
+import { query, orderBy, limit } from 'firebase/firestore';
 import { translationDocRef, translationSegmentsColRef } from '@/lib/translation/firestore';
 import type { CallTranslationDoc, TranslationSegmentDoc } from '@/lib/translation/types';
 import { useFirestore } from '@/firebase';
 
 /**
  * Hook to listen to translation state and segments for a specific call.
+ * Limits segments to 40 for optimal UI performance.
  */
 export function useCallTranslation(callId: string) {
   const firestore = useFirestore();
@@ -24,7 +26,8 @@ export function useCallTranslation(callId: string) {
   const segmentsQuery = useMemoFirebase(
     () => (callId ? query(
       translationSegmentsColRef(firestore, callId), 
-      orderBy('sequence', 'asc')
+      orderBy('sequence', 'asc'),
+      limit(40)
     ) : null),
     [firestore, callId]
   );

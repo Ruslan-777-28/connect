@@ -5,11 +5,10 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { buildInitialTranslationDoc } from '@/lib/translation/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
-import { startWorkerTranslationSession } from '@/lib/translation/worker-client';
 
 /**
  * API route to initialize a translation session for a specific call.
- * It fetches participant language preferences directly from their profiles.
+ * Pure server-side session activation (browser-led architecture).
  */
 export async function POST(
   request: NextRequest,
@@ -22,7 +21,7 @@ export async function POST(
       return NextResponse.json({ error: 'Missing callId' }, { status: 400 });
     }
 
-    // 1. Fetch the call document to get participant IDs and flags
+    // 1. Fetch the call document
     const callSnap = await adminDb.collection('calls').doc(callId).get();
     if (!callSnap.exists) {
       return NextResponse.json({ error: 'Call not found' }, { status: 404 });
@@ -30,7 +29,7 @@ export async function POST(
     const call = callSnap.data()!;
     const { callerId, receiverId, roomName, roomUrl, translationEnabled, transcriptEnabled } = call;
 
-    // 2. Fetch user profiles to get their preferred languages
+    // 2. Fetch user profiles for language preferences
     const [callerSnap, receiverSnap] = await Promise.all([
       adminDb.collection('users').doc(callerId).get(),
       adminDb.collection('users').doc(receiverId).get(),
@@ -39,11 +38,10 @@ export async function POST(
     const callerData = callerSnap.data() || {};
     const receiverData = receiverSnap.data() || {};
 
-    // Determine locales with fallbacks
     const callerLang = callerData.preferredLanguage || 'uk-UA';
     const receiverLang = receiverData.preferredLanguage || 'en-US';
 
-    // 3. Construct participants array for the helper
+    // 3. Construct participants array
     const participants = [
       {
         uid: callerId,
@@ -74,28 +72,19 @@ export async function POST(
       participants,
     });
 
+    // NEW ARCHITECTURE: Direct 'active' status, 'disabled' botStatus
+    // We no longer call the worker because clients handle recognition
     await translationRef.set({
       ...initialDoc,
       enabled: translationEnabled ?? true,
       transcriptEnabled: transcriptEnabled ?? false,
       createdAt: FieldValue.serverTimestamp(),
       startedAt: FieldValue.serverTimestamp(),
+      activatedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
-      status: 'starting',
-      botStatus: 'joining',
+      status: 'active',
+      botStatus: 'disabled', 
     });
-
-    // 5. Notify the background worker (if configured)
-    try {
-      await startWorkerTranslationSession({
-        callId,
-        roomName: roomName ?? null,
-        dailyRoomUrl: roomUrl ?? null,
-        participants,
-      });
-    } catch (workerError) {
-      console.error('Worker failed to start, but session document created:', workerError);
-    }
 
     const savedSnap = await translationRef.get();
 

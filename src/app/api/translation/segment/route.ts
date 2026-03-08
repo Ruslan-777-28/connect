@@ -1,22 +1,22 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
- * Виконує переклад за допомогою Azure Translator API v3.0.
+ * Performs translation using Azure Translator API v3.0.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
   const region = process.env.AZURE_TRANSLATOR_REGION;
   
   if (!key) {
-    console.warn('AZURE_TRANSLATOR_KEY missing, returning original text');
+    console.warn('[Translator] AZURE_TRANSLATOR_KEY missing, returning original text');
     return text;
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  // Get ISO 639-1 code (e.g., 'uk' from 'uk-UA')
   const to = targetLocale.split('-')[0];
 
   try {
@@ -37,13 +37,13 @@ async function translateText(text: string, targetLocale: string): Promise<string
     const json = await res.json();
     return json[0].translations[0].text;
   } catch (error) {
-    console.error('Azure Translation failed:', error);
+    console.error('[Translator] Azure Translation failed:', error);
     return text; 
   }
 }
 
 /**
- * Обробляє розпізнаний сегмент мовлення: перекладає та зберігає у Firestore з серверною чергою.
+ * Processes a speech segment: translates and stores in Firestore with atomic sequence management.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -53,32 +53,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Використовуємо транзакцію для гарантування послідовності (sequence)
+    // Server-side translation first
+    const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
+    const translationSnap = await translationRef.get();
+
+    if (!translationSnap.exists) {
+      return NextResponse.json({ error: 'Translation session not found' }, { status: 404 });
+    }
+
+    const translationData = translationSnap.data()!;
+    const speakerData = translationData.participants?.[speakerId];
+
+    if (!speakerData) {
+      return NextResponse.json({ error: 'Speaker configuration not found' }, { status: 404 });
+    }
+
+    // 1. Perform translation
+    const translatedText = await translateText(text, speakerData.targetLocale);
+
+    // 2. Transactional Write for Sequence + Metrics
     const result = await adminDb.runTransaction(async (transaction) => {
-      const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
-      const translationSnap = await transaction.get(translationRef);
+      const freshSnap = await transaction.get(translationRef);
+      if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
+      
+      const currentMetrics = freshSnap.data()?.metrics || { totalSegments: 0 };
+      const nextSequence = (currentMetrics.totalSegments || 0) + 1;
 
-      if (!translationSnap.exists) {
-        throw new Error('Translation session not found');
-      }
-
-      const translationData = translationSnap.data()!;
-      const speakerData = translationData.participants?.[speakerId];
-
-      if (!speakerData) {
-        throw new Error('Speaker configuration not found');
-      }
-
-      // 1. Виконуємо переклад
-      const translatedText = await translateText(text, speakerData.targetLocale);
-
-      // 2. Визначаємо наступний порядковий номер
-      const currentSequence = translationData.metrics?.totalSegments || 0;
-      const nextSequence = currentSequence + 1;
-
-      // 3. Підготовлюємо документ сегмента
       const segmentsRef = translationRef.collection('segments');
-      const segmentDocRef = segmentsRef.doc(); // Створюємо новий ID
+      const segmentDocRef = segmentsRef.doc(`seg_${nextSequence.toString().padStart(6, '0')}`);
 
       const segmentData = {
         callId,
@@ -97,7 +99,6 @@ export async function POST(request: NextRequest) {
         status: 'final',
       };
 
-      // 4. Виконуємо запис сегмента та оновлення метрик атомарно
       transaction.set(segmentDocRef, segmentData);
       transaction.update(translationRef, {
         'metrics.totalSegments': nextSequence,
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, ...result });
   } catch (error: any) {
-    console.error('Segment processing failed:', error);
+    console.error('[TranslationSegment] Processing failed:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });
   }
 }
