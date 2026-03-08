@@ -86,6 +86,9 @@ export interface CallTranslationDoc {
 
   languagePairKey: string;
   
+  /** 
+   * Server-side sequence counter for guaranteed ordering of segments.
+   */
   nextSequence: number;
 
   startedAt: Timestamp | null;

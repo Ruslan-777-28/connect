@@ -13,12 +13,12 @@ interface UseSpeechRecognizerParams {
 }
 
 /**
- * Хук для керування життєвим циклом розпізнавання мовлення під час дзвінка з буферизацією.
+ * Manages the lifecycle of Azure Speech Recognition during a call.
  * 
- * Логіка Batch 3.2:
- * 1. recognizing -> тільки локальне preview
- * 2. recognized -> додає у bufferRef
- * 3. flush -> якщо .?! або 1.8с тиші
+ * Logic Batch 3.2:
+ * 1. recognizing -> Local UI preview only (throttled).
+ * 2. recognized -> Accumulates into buffer.
+ * 3. flush -> Triggers on punctuation (.?!) or 1.8s silence.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -29,7 +29,7 @@ export function useSpeechRecognizer({
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const isStartingRef = useRef(false);
   
-  // Buffering logic
+  // Buffering logic for high-quality translation context
   const bufferRef = useRef("");
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -55,9 +55,9 @@ export function useSpeechRecognizer({
 
   const stopRecognizer = useCallback(async () => {
     if (recognizerRef.current) {
-      console.info('[SpeechRecognizer] Зупинка recognizer...');
+      console.info('[SpeechRecognizer] Stopping recognizer session...');
       try {
-        // Force flush buffer before stopping
+        // Flush any remaining buffer before closing
         if (bufferRef.current.trim()) flushBuffer();
         
         const r = recognizerRef.current;
@@ -70,13 +70,13 @@ export function useSpeechRecognizer({
               resolve();
             },
             (err) => {
-              console.warn('[SpeechRecognizer] Помилка зупинки:', err);
+              console.warn('[SpeechRecognizer] Force close failed:', err);
               resolve();
             }
           );
         });
       } catch (e) {
-        console.warn('[SpeechRecognizer] Помилка при закритті:', e);
+        console.warn('[SpeechRecognizer] Error during cleanup:', e);
       }
     }
   }, [flushBuffer]);
@@ -85,31 +85,33 @@ export function useSpeechRecognizer({
     if (!enabled || !sourceLocale || isStartingRef.current) return;
     
     isStartingRef.current = true;
-    console.info('[SpeechRecognizer] Запуск сесії...', { locale: sourceLocale });
+    console.info('[SpeechRecognizer] Initializing Azure session...', { locale: sourceLocale });
 
     try {
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // 1. recognizing -> Тільки локальний Preview
+      // 1. recognizing -> High-frequency local UI preview
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
+        // Basic throttle to avoid React render spam
         if (text && text.length >= 2 && onRecognizing) {
           onRecognizing(text);
         }
       };
 
-      // 2. recognized -> Накопичення в буфер
+      // 2. recognized -> Phrase accumulation
       activeRecognizer.recognized = (_: any, event: any) => {
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
           const text = event.result.text;
           if (text && text.trim().length > 1) {
             bufferRef.current += " " + text.trim();
             
-            // Якщо речення закінчилось пунктуацією - флашимо миттєво
+            // If phrase ends with punctuation, flush immediately for responsiveness
             if (/[.?!]$/.test(text.trim())) {
               flushBuffer();
             } else {
+              // Otherwise, wait for silence to gather full context
               scheduleFlush();
             }
           }
@@ -117,28 +119,27 @@ export function useSpeechRecognizer({
       };
 
       activeRecognizer.canceled = (s: any, e: any) => {
-        console.warn('[SpeechRecognizer] Сесію скасовано:', e.reason);
+        console.warn('[SpeechRecognizer] Session canceled:', e.reason);
         isStartingRef.current = false;
       };
 
       activeRecognizer.startContinuousRecognitionAsync(
         () => {
-          console.info('[SpeechRecognizer] Активно');
+          console.info('[SpeechRecognizer] ACTIVE');
           isStartingRef.current = false;
         },
         (err) => {
-          console.error('[SpeechRecognizer] Помилка:', err);
+          console.error('[SpeechRecognizer] Start failed:', err);
           isStartingRef.current = false;
         }
       );
     } catch (err) {
-      console.error('[SpeechRecognizer] Init failed:', err);
+      console.error('[SpeechRecognizer] Initialization failed:', err);
       isStartingRef.current = false;
     }
   }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
 
   useEffect(() => {
-    // Restart logic for locale changes or enabling
     const restart = async () => {
       await stopRecognizer();
       if (enabled) {

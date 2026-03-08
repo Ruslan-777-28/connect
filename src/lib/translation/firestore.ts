@@ -147,7 +147,7 @@ export function buildInitialTranslationDoc(
     participants: participantMap,
 
     languagePairKey,
-    nextSequence: 1,
+    nextSequence: 1, // Initialize sequence for Batch 3.2
 
     startedAt: null,
     activatedAt: null,

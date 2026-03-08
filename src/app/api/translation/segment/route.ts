@@ -6,6 +6,7 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
  * Performs translation using Azure Translator API v3.0.
+ * Uses regional resources if configured.
  */
 async function translateText(text: string, targetLocale: string): Promise<string> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
@@ -17,7 +18,7 @@ async function translateText(text: string, targetLocale: string): Promise<string
   }
 
   const endpoint = "https://api.cognitive.microsofttranslator.com/translate?api-version=3.0";
-  const to = targetLocale.split('-')[0]; // Extract 'uk' from 'uk-UA'
+  const to = targetLocale.split('-')[0]; // Simple BCP-47 to language code mapping (e.g., uk-UA -> uk)
 
   try {
     const res = await fetch(`${endpoint}&to=${to}`, {
@@ -38,12 +39,13 @@ async function translateText(text: string, targetLocale: string): Promise<string
     return json[0].translations[0].text;
   } catch (error) {
     console.error('[Translator] Azure Translation failed:', error);
-    return text; 
+    return text; // Fallback to original text on failure
   }
 }
 
 /**
- * Processes a speech segment: translates and stores in Firestore with atomic sequence management.
+ * Processes a recognized speech segment: translates it and stores in Firestore.
+ * Uses atomic transaction to manage global sequence number.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -72,13 +74,13 @@ export async function POST(request: NextRequest) {
     // 2. Perform translation
     const translatedText = await translateText(text, speakerData.targetLocale);
 
-    // 3. Transactional Write for Sequence + Metrics
+    // 3. Atomic Transaction for Sequence + Metrics
     const result = await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared during transaction');
       
       const data = freshSnap.data()!;
-      // Use nextSequence field or fallback to totalSegments + 1
+      // Handle missing nextSequence for older docs
       const currentSequence = data.nextSequence || (data.metrics?.totalSegments || 0) + 1;
 
       const segmentsRef = translationRef.collection('segments');
