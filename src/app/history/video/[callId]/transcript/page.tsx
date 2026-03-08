@@ -2,12 +2,12 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useDoc, useFirestore, useMemoFirebase, useCollection } from '@/firebase';
+import { useDoc, useFirestore, useMemoFirebase, useCollection, useUser } from '@/firebase';
 import { doc, collection, query, orderBy } from 'firebase/firestore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, Download, FileText, Loader2, Globe, Clock } from 'lucide-react';
-import type { Call, TranslationSegment } from '@/lib/types';
+import type { Call, TranslationSegment, UserProfile } from '@/lib/types';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +15,11 @@ export default function TranscriptPage() {
   const { callId } = useParams<{ callId: string }>();
   const router = useRouter();
   const firestore = useFirestore();
+  const { user } = useUser();
+
+  const userRef = useMemoFirebase(() => (user ? doc(firestore, 'users', user.uid) : null), [user, firestore]);
+  const { data: profile } = useDoc<UserProfile>(userRef);
+  const myLocale = profile?.preferredLanguage || 'uk-UA';
 
   const callRef = useMemoFirebase(() => doc(firestore, 'calls', callId), [firestore, callId]);
   const { data: call, isLoading: loadingCall } = useDoc<Call>(callRef);
@@ -75,6 +80,7 @@ export default function TranscriptPage() {
               {segments && segments.length > 0 ? (
                 segments.map((seg) => {
                   const time = seg.emittedAt?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '--:--';
+                  const displayTranslation = seg.translations?.[myLocale] || seg.translations?.[Object.keys(seg.translations)[0]] || '';
                   
                   return (
                     <div key={seg.id} className="group animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -92,7 +98,7 @@ export default function TranscriptPage() {
                           </div>
                         </div>
                         <span className="text-[10px] text-muted-foreground/40 uppercase font-bold tracking-tighter">
-                          {seg.sourceLocale} → {seg.targetLocale}
+                          {seg.sourceLocale} → {myLocale}
                         </span>
                       </div>
                       
@@ -100,7 +106,7 @@ export default function TranscriptPage() {
                         <div className="space-y-1">
                           <span className="text-[9px] font-bold text-primary uppercase tracking-widest opacity-70">Переклад:</span>
                           <p className="text-sm font-bold text-foreground leading-relaxed">
-                            {seg.translatedText}
+                            {displayTranslation}
                           </p>
                         </div>
                         <div className="space-y-1 pt-1">

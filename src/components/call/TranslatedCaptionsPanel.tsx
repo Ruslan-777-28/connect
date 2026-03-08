@@ -6,6 +6,9 @@ import type { TranslationSegmentDoc } from '@/lib/translation/types';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
+import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
+import { doc } from 'firebase/firestore';
+import type { UserProfile } from '@/lib/types';
 
 interface TranslatedCaptionsPanelProps {
   segments: TranslationSegmentDoc[] | null;
@@ -15,6 +18,13 @@ interface TranslatedCaptionsPanelProps {
 
 export function TranslatedCaptionsPanel({ segments, localPreview, className }: TranslatedCaptionsPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const { user } = useUser();
+  const firestore = useFirestore();
+
+  // Fetch current user's preferred language to pick the right translation
+  const userRef = useMemoFirebase(() => (user ? doc(firestore, 'users', user.uid) : null), [user, firestore]);
+  const { data: profile } = useDoc<UserProfile>(userRef);
+  const myLocale = profile?.preferredLanguage || 'uk-UA';
 
   // Auto-scroll to bottom when new segments arrive
   useEffect(() => {
@@ -41,7 +51,9 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden">
         <div className="p-4 space-y-5">
           {segments?.map((segment, idx) => {
-            const isPending = segment.status === 'partial' || !segment.translatedText;
+            // Find the translation matching the local user's preference
+            const displayTranslation = segment.translations?.[myLocale] || segment.translations?.[Object.keys(segment.translations)[0]];
+            const isPending = segment.status === 'partial' || !displayTranslation;
             
             return (
               <div 
@@ -63,19 +75,17 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                     )}
                   </div>
                   <span className="text-[7px] text-white/20 font-mono uppercase tracking-tighter">
-                    {segment.sourceLocale} → {segment.targetLocale}
+                    {segment.sourceLocale} → {myLocale}
                   </span>
                 </div>
                 
-                {/* Main Text Slot: Shows translation if ready, otherwise original */}
                 <p className={cn(
                   "text-sm leading-relaxed transition-colors duration-500",
                   isPending ? "text-white/60 font-medium italic" : "text-white font-bold"
                 )}>
-                  {isPending ? segment.originalText : segment.translatedText}
+                  {isPending ? segment.originalText : displayTranslation}
                 </p>
                 
-                {/* Secondary Slot: Shows original text when translation is finished */}
                 {!isPending && (
                   <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
                     {segment.originalText}
@@ -85,7 +95,7 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
             );
           })}
 
-          {/* Local Preview (Ongoing speech) */}
+          {/* Local Preview */}
           {localPreview && (
             <div className="flex flex-col gap-1.5 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
               <div className="flex items-center gap-2">
@@ -104,7 +114,6 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
         </div>
       </ScrollArea>
       
-      {/* Live Indicator */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5">
         <span className="text-[7px] font-black text-red-500 uppercase tracking-widest">Live</span>
         <div className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />

@@ -5,7 +5,7 @@ import { getStorage } from 'firebase-admin/storage';
 import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
- * Generates a rich transcript for a call session (Original + Translation),
+ * Generates a rich transcript for a call session (Original + Multi-Translations),
  * uploads it to Storage, and updates the call translation document.
  */
 export async function POST(
@@ -39,7 +39,7 @@ export async function POST(
       return NextResponse.json({ ok: true, message: 'No segments found to generate transcript' });
     }
 
-    // 3. Format the transcript text: [Time] Name | Original | Translation
+    // 3. Format the transcript text
     const transcriptLines: string[] = [];
     const participants = translationData.participants || {};
 
@@ -50,13 +50,20 @@ export async function POST(
       
       transcriptLines.push(`[${time}] ${speakerName}`);
       transcriptLines.push(`Original: ${seg.originalText}`);
-      transcriptLines.push(`Translation: ${seg.translatedText}`);
+      
+      // List all translations in the transcript
+      if (seg.translations) {
+        Object.entries(seg.translations).forEach(([locale, text]) => {
+          transcriptLines.push(`Translation (${locale}): ${text}`);
+        });
+      }
+      
       transcriptLines.push('------------------------------------------');
     });
 
     const transcriptContent = `CALL TRANSCRIPT - SESSION ${callId}\n` +
       `Generated at: ${new Date().toLocaleString('uk-UA')}\n` +
-      `Mode: Live Translation (Original + Translation)\n` +
+      `Mode: Multi-Target Translation Fan-out\n` +
       `==================================================\n\n` +
       transcriptLines.join('\n');
 
