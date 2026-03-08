@@ -62,10 +62,6 @@ export function useSpeechRecognizer({
           }
         };
 
-        activeRecognizer.sessionStopped = () => {
-          console.log('Speech recognition session stopped');
-        };
-
         activeRecognizer.startContinuousRecognitionAsync(
           () => console.log('Speech recognition started'),
           (err) => console.error('Failed to start speech recognition', err)
