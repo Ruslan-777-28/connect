@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import DailyIframe, { type DailyCall } from '@daily-co/daily-js';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { useFirebaseApp, useFirestore } from '@/firebase';
+import { useFirebaseApp, useFirestore, useUser } from '@/firebase';
 import { endCallClient } from '@/lib/calls';
 import type { Call } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { PhoneOff, Loader2, MessageSquareQuote, ChevronRight, ChevronLeft } from
 import { useCallTranslation } from '@/hooks/useCallTranslation';
 import { TranslationStatusBadge } from '@/components/call/TranslationStatusBadge';
 import { TranslatedCaptionsPanel } from '@/components/call/TranslatedCaptionsPanel';
+import { useSpeechRecognizer } from '@/hooks/useSpeechRecognizer';
 import { cn } from '@/lib/utils';
 
 function buildDailyUrl(roomUrl: string, token: string) {
@@ -27,12 +28,14 @@ export default function CallRoomPage() {
 
   const app = useFirebaseApp();
   const firestore = useFirestore();
+  const { user } = useUser();
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const callRef = useRef<DailyCall | null>(null);
   const endingRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
+  const [callData, setCallData] = useState<Call | null>(null);
   const [status, setStatus] = useState<Call['status'] | 'unknown'>('unknown');
   const [showCaptions, setShowCaptions] = useState(true);
 
@@ -73,6 +76,34 @@ export default function CallRoomPage() {
     await endCallClient(app, callId, 'ended');
   }, [app, callId]);
 
+  // Speech Recognition Handling
+  const myProfileId = user?.uid;
+  const myConfig = translation?.participants?.[myProfileId || ''];
+  
+  const handleRecognized = useCallback(async (text: string) => {
+    if (!myProfileId || !callId) return;
+    
+    try {
+      await fetch('/api/translation/segment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          callId,
+          speakerId: myProfileId,
+          sourceText: text,
+        })
+      });
+    } catch (err) {
+      console.error('Failed to send translation segment:', err);
+    }
+  }, [callId, myProfileId]);
+
+  useSpeechRecognizer({
+    enabled: !!(callData?.translationEnabled && status === 'accepted' && myConfig),
+    sourceLocale: myConfig?.sourceLocale || 'uk-UA',
+    onRecognized: handleRecognized,
+  });
+
   useEffect(() => {
     const unsub = onSnapshot(
       doc(firestore, 'calls', callId),
@@ -84,6 +115,7 @@ export default function CallRoomPage() {
           return;
         }
         const data = snap.data() as Call;
+        setCallData(data);
         setStatus(data.status ?? 'unknown');
         if (data.status === 'ended') {
           await leaveAndDestroy();
