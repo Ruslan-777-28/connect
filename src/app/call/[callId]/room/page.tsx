@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -92,7 +93,7 @@ export default function CallRoomPage() {
         body: JSON.stringify({
           callId,
           speakerId: myProfileId,
-          text: text, // Changed from sourceText to text
+          text: text,
         })
       });
     } catch (err) {
@@ -212,7 +213,7 @@ export default function CallRoomPage() {
               className={cn("h-9 rounded-full px-4 border-primary/20", showCaptions && "bg-primary/10 text-primary")}
             >
               <MessageSquareQuote className="mr-2 h-4 w-4" />
-              {showCaptions ? 'Приховати субтитри' : 'Показати субтитри'}
+              <span className="hidden sm:inline">{showCaptions ? 'Приховати субтитри' : 'Показати субтитри'}</span>
             </Button>
           )}
 
@@ -224,7 +225,7 @@ export default function CallRoomPage() {
             className="h-9 rounded-full px-4 shadow-lg shadow-destructive/20"
           >
             <PhoneOff className="mr-2 h-4 w-4" />
-            Завершити
+            <span className="hidden sm:inline">Завершити</span>
           </Button>
         </div>
       </div>
@@ -236,8 +237,11 @@ export default function CallRoomPage() {
 
         {translation?.enabled && showCaptions && (
           <div className={cn(
-            "absolute right-4 bottom-24 top-20 w-full max-w-[320px] z-10 transition-all duration-500 ease-in-out",
-            showCaptions ? "translate-x-0 opacity-100" : "translate-x-full opacity-0 pointer-events-none"
+            "absolute z-30 transition-all duration-500 ease-in-out",
+            "top-2 left-2 right-2 h-32 md:h-auto md:top-20 md:bottom-24 md:right-4 md:left-auto md:w-full md:max-w-[320px]",
+            showCaptions 
+              ? "translate-y-0 opacity-100" 
+              : "-translate-y-4 opacity-0 pointer-events-none md:translate-x-full md:translate-y-0"
           )}>
             <TranslatedCaptionsPanel 
               segments={segments} 

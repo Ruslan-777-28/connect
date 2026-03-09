@@ -1,3 +1,4 @@
+
 'use client';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -46,7 +47,7 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
   return (
     <div ref={viewportRef} className={cn("relative group h-full", className)}>
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden">
-        <div className="p-4 space-y-5">
+        <div className="p-3 md:p-4 space-y-3 md:space-y-5">
           {segments?.map((segment, idx) => {
             const displayTranslation = segment.translations?.[myLocale] || Object.values(segment.translations)[0];
             const isPending = !displayTranslation;
@@ -55,14 +56,14 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
               <div 
                 key={`${segment.speakerUid}-${segment.sequence}-${idx}`} 
                 className={cn(
-                  "flex flex-col gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
+                  "flex flex-col gap-1 md:gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
                   isPending && "opacity-80"
                 )}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={cn(
-                      "text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none",
+                      "text-[7px] md:text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none",
                       segment.speakerRole === 'caller' ? "bg-primary text-primary-foreground" : "bg-green-500 text-white"
                     )}>
                       {segment.speakerDisplayName || (segment.speakerRole === 'caller' ? 'Клієнт' : 'Профі')}
@@ -79,14 +80,14 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                 </div>
                 
                 <p className={cn(
-                  "text-sm leading-relaxed transition-colors duration-500",
+                  "text-xs md:text-sm leading-relaxed transition-colors duration-500",
                   isPending ? "text-white font-medium italic" : "text-white font-bold"
                 )}>
                   {isPending ? segment.originalText : displayTranslation}
                 </p>
                 
                 {!isPending && (
-                  <p className="text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
+                  <p className="text-[10px] md:text-[11px] text-white/40 italic font-medium border-l-2 border-white/10 pl-2 py-0.5">
                     {segment.originalText}
                   </p>
                 )}
@@ -95,16 +96,16 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
           })}
 
           {localPreview && (
-            <div className="flex flex-col gap-1.5 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
+            <div className="flex flex-col gap-1 md:gap-1.5 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
               <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none bg-white/20 text-white">
+                <span className="text-[7px] md:text-[8px] font-black uppercase px-1.5 py-0.5 rounded tracking-widest leading-none bg-white/20 text-white">
                   Ви
                 </span>
-                <span className="text-[8px] text-yellow-500 font-bold animate-pulse tracking-widest uppercase">
+                <span className="text-[7px] md:text-[8px] text-yellow-500 font-bold animate-pulse tracking-widest uppercase">
                   Розпізнавання...
                 </span>
               </div>
-              <p className="text-sm font-medium text-white leading-relaxed italic border-l-2 border-yellow-500/30 pl-2">
+              <p className="text-xs md:text-sm font-medium text-white leading-relaxed italic border-l-2 border-yellow-500/30 pl-2">
                 {localPreview}
               </p>
             </div>
@@ -112,9 +113,9 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
         </div>
       </ScrollArea>
       
-      <div className="absolute top-3 right-3 flex items-center gap-1.5">
+      <div className="absolute top-2 right-2 md:top-3 md:right-3 flex items-center gap-1.5">
         <span className="text-[7px] font-black text-red-500 uppercase tracking-widest">Live</span>
-        <div className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+        <div className="h-1 w-1 md:h-1.5 md:w-1.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
       </div>
     </div>
   );
