@@ -1,4 +1,3 @@
-
 'use client';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,12 +20,10 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
   const { user } = useUser();
   const firestore = useFirestore();
 
-  // Fetch current user's preferred language to pick the right translation
   const userRef = useMemoFirebase(() => (user ? doc(firestore, 'users', user.uid) : null), [user, firestore]);
   const { data: profile } = useDoc<UserProfile>(userRef);
   const myLocale = profile?.preferredLanguage || 'uk-UA';
 
-  // Auto-scroll to bottom when new segments arrive
   useEffect(() => {
     if (viewportRef.current) {
       const scrollContainer = viewportRef.current.querySelector('[data-radix-scroll-area-viewport]');
@@ -51,9 +48,8 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden">
         <div className="p-4 space-y-5">
           {segments?.map((segment, idx) => {
-            // Find the translation matching the local user's preference
-            const displayTranslation = segment.translations?.[myLocale] || segment.translations?.[Object.keys(segment.translations)[0]];
-            const isPending = segment.status === 'partial' || !displayTranslation;
+            const displayTranslation = segment.translations?.[myLocale] || Object.values(segment.translations)[0];
+            const isPending = !displayTranslation;
             
             return (
               <div 
@@ -82,11 +78,6 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                   </span>
                 </div>
                 
-                {/* 
-                  Speculative Logic: 
-                  If translation is pending, show originalText in primary style.
-                  Once final, show displayTranslation in primary style and originalText as a sub-caption.
-                */}
                 <p className={cn(
                   "text-sm leading-relaxed transition-colors duration-500",
                   isPending ? "text-white font-medium italic" : "text-white font-bold"
@@ -103,7 +94,6 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
             );
           })}
 
-          {/* Local Preview */}
           {localPreview && (
             <div className="flex flex-col gap-1.5 opacity-60 scale-[0.98] origin-left animate-in fade-in slide-in-from-bottom-1">
               <div className="flex items-center gap-2">

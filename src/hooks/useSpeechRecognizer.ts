@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useRef, useCallback } from 'react';
@@ -15,10 +14,10 @@ interface UseSpeechRecognizerParams {
 /**
  * Manages the lifecycle of Azure Speech Recognition during a call.
  * 
- * Logic:
- * 1. recognizing -> Local UI preview only (throttled).
- * 2. recognized -> Accumulates into buffer with deduplication.
- * 3. flush -> Triggers on punctuation (.?!) or 1.8s silence.
+ * Includes "Reconnect Hardening":
+ * 1. Automatic recovery on browser 'online' event.
+ * 2. Watchdog timer for silent sessions.
+ * 3. Intelligent restarts on canceled events.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -29,15 +28,34 @@ export function useSpeechRecognizer({
   const recognizerRef = useRef<SpeechSDK.SpeechRecognizer | null>(null);
   const isStartingRef = useRef(false);
   
-  // Buffering logic for high-quality translation context
+  // Buffering and Watchdog refs
   const bufferRef = useRef("");
   const flushTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const watchdogIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityAtRef = useRef<number>(Date.now());
+
+  const clearTimers = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+    if (watchdogIntervalRef.current) {
+      clearInterval(watchdogIntervalRef.current);
+      watchdogIntervalRef.current = null;
+    }
+  }, []);
 
   const flushBuffer = useCallback(() => {
     const text = bufferRef.current.trim();
     if (text.length > 1) {
       console.log('[SpeechRecognizer] Flushing phrase buffer:', text);
       onRecognized(text);
+      lastActivityAtRef.current = Date.now();
     }
     bufferRef.current = "";
     if (flushTimerRef.current) {
@@ -54,10 +72,10 @@ export function useSpeechRecognizer({
   }, [flushBuffer]);
 
   const stopRecognizer = useCallback(async () => {
+    clearTimers();
     if (recognizerRef.current) {
       console.info('[SpeechRecognizer] Stopping recognizer session...');
       try {
-        // Flush any remaining buffer before closing
         if (bufferRef.current.trim()) flushBuffer();
         
         const r = recognizerRef.current;
@@ -79,7 +97,7 @@ export function useSpeechRecognizer({
         console.warn('[SpeechRecognizer] Error during cleanup:', e);
       }
     }
-  }, [flushBuffer]);
+  }, [flushBuffer, clearTimers]);
 
   const startRecognizer = useCallback(async () => {
     if (!enabled || !sourceLocale || isStartingRef.current) return;
@@ -91,46 +109,61 @@ export function useSpeechRecognizer({
       const activeRecognizer = await createRecognizer(sourceLocale);
       recognizerRef.current = activeRecognizer;
 
-      // 1. recognizing -> Local UI preview (minimal throttling)
       activeRecognizer.recognizing = (_: any, event: any) => {
         const text = event.result.text;
+        lastActivityAtRef.current = Date.now();
         if (text && text.length >= 2 && onRecognizing) {
           onRecognizing(text);
         }
       };
 
-      // 2. recognized -> Phrase accumulation with deduplication
       activeRecognizer.recognized = (_: any, event: any) => {
+        lastActivityAtRef.current = Date.now();
         if (event.result.reason === SpeechSDK.ResultReason.RecognizedSpeech) {
           const text = event.result.text?.trim();
           if (text && text.length > 1) {
-            // Deduplication guard: check if this text is already at the end of buffer
-            // Azure sometimes repeats parts of speech in 'recognized' events
             const currentBuffer = bufferRef.current.trim();
             if (!currentBuffer.endsWith(text)) {
               bufferRef.current += (bufferRef.current ? " " : "") + text;
             }
             
-            // If phrase ends with punctuation, flush immediately
             if (/[.?!]$/.test(text)) {
               flushBuffer();
             } else {
-              // Otherwise, wait for silence to gather full context
               scheduleFlush();
             }
           }
         }
       };
 
-      activeRecognizer.canceled = (s: any, e: any) => {
-        console.warn('[SpeechRecognizer] Session canceled:', e.reason);
+      activeRecognizer.canceled = async (_: any, e: any) => {
+        console.warn('[SpeechRecognizer] Session canceled:', e.reason, e.errorDetails || '');
         isStartingRef.current = false;
+        if (!enabled) return;
+        
+        // Trigger recovery
+        setTimeout(() => {
+          if (enabled) startRecognizer();
+        }, 1000);
       };
 
       activeRecognizer.startContinuousRecognitionAsync(
         () => {
           console.info('[SpeechRecognizer] ACTIVE');
           isStartingRef.current = false;
+          lastActivityAtRef.current = Date.now();
+
+          if (watchdogIntervalRef.current) {
+            clearInterval(watchdogIntervalRef.current);
+          }
+
+          watchdogIntervalRef.current = setInterval(() => {
+            const idleMs = Date.now() - lastActivityAtRef.current;
+            if (enabled && idleMs > 35000) {
+              console.warn('[SpeechRecognizer] Watchdog triggered (idle for 35s)');
+              stopRecognizer().then(() => startRecognizer());
+            }
+          }, 10000);
         },
         (err) => {
           console.error('[SpeechRecognizer] Start failed:', err);
@@ -141,20 +174,31 @@ export function useSpeechRecognizer({
       console.error('[SpeechRecognizer] Initialization failed:', err);
       isStartingRef.current = false;
     }
-  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush]);
+  }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush, stopRecognizer]);
 
+  // Handle browser online event
   useEffect(() => {
-    const restart = async () => {
+    if (!enabled) return;
+    const handleOnline = () => {
+      console.info('[SpeechRecognizer] Browser online, recovery triggered');
+      stopRecognizer().then(() => startRecognizer());
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [enabled, startRecognizer, stopRecognizer]);
+
+  // Primary lifecycle
+  useEffect(() => {
+    const boot = async () => {
       await stopRecognizer();
       if (enabled) {
         startRecognizer();
       }
     };
-    restart();
+    boot();
 
     return () => {
       stopRecognizer();
-      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
     };
   }, [enabled, sourceLocale, startRecognizer, stopRecognizer]); 
 
