@@ -61,10 +61,10 @@ async function translateText(text: string, targetLocales: string[]): Promise<Rec
 }
 
 /**
- * Processes a recognized speech segment using the "Speculative Captions" trick.
+ * Processes a recognized speech segment using the "Speculative Captions" pattern.
  * 1. Immediate transactional write of original text (Zero Latency UI).
  * 2. Background translation call.
- * 3. Update segment with translations.
+ * 3. Update segment with translations and finalize status.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -103,10 +103,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Speaker not found' }, { status: 404 });
     }
 
-    // PHASE 1: Immediate Transactional Write (Original Text)
-    // UI will show original text with "Translating..." status instantly.
+    // PHASE 1: Immediate Transactional Write (Original Text Only)
+    // This RESERVES the sequence number and puts the text on screen ASAP.
     let currentSequence = 0;
-    const segmentsRef = translationRef.collection('segments');
     let segmentDocRef: FirebaseFirestore.DocumentReference;
 
     await adminDb.runTransaction(async (transaction) => {
@@ -115,7 +114,7 @@ export async function POST(request: NextRequest) {
       
       const data = freshSnap.data()!;
       currentSequence = data.nextSequence || 1;
-      segmentDocRef = segmentsRef.doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
+      segmentDocRef = translationRef.collection('segments').doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
 
       const initialSegment = {
         callId,
@@ -143,11 +142,11 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // PHASE 2: Multi-target Background Translation
+    // PHASE 2: Background Translation (Asynchronous)
     const targetLocales = [speakerData.targetLocale];
     const translations = await translateText(cleanText, targetLocales);
 
-    // PHASE 3: Update with final translations
+    // PHASE 3: Update with final translations and mark as final
     await segmentDocRef!.update({
       translations,
       isFinal: true,

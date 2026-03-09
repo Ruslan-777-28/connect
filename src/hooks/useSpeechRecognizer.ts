@@ -14,10 +14,10 @@ interface UseSpeechRecognizerParams {
 /**
  * Manages the lifecycle of Azure Speech Recognition during a call.
  * 
- * Includes "Reconnect Hardening":
+ * Reconnect Hardening:
  * 1. Automatic recovery on browser 'online' event.
- * 2. Watchdog timer for silent sessions.
- * 3. Intelligent restarts on canceled events.
+ * 2. Watchdog timer for silent sessions (restarts if no activity for 30s).
+ * 3. Intelligent restarts on canceled/error events.
  */
 export function useSpeechRecognizer({
   enabled,
@@ -74,7 +74,7 @@ export function useSpeechRecognizer({
   const stopRecognizer = useCallback(async () => {
     clearTimers();
     if (recognizerRef.current) {
-      console.info('[SpeechRecognizer] Stopping recognizer session...');
+      console.info('[SpeechRecognizer] Stopping session...');
       try {
         if (bufferRef.current.trim()) flushBuffer();
         
@@ -127,6 +127,7 @@ export function useSpeechRecognizer({
               bufferRef.current += (bufferRef.current ? " " : "") + text;
             }
             
+            // If punctuation detected, flush immediately
             if (/[.?!]$/.test(text)) {
               flushBuffer();
             } else {
@@ -139,12 +140,14 @@ export function useSpeechRecognizer({
       activeRecognizer.canceled = async (_: any, e: any) => {
         console.warn('[SpeechRecognizer] Session canceled:', e.reason, e.errorDetails || '');
         isStartingRef.current = false;
-        if (!enabled) return;
         
-        // Trigger recovery
-        setTimeout(() => {
-          if (enabled) startRecognizer();
-        }, 1000);
+        if (enabled) {
+          // Intelligent restart on error
+          if (restartTimeoutRef.current) clearTimeout(restartTimeoutRef.current);
+          restartTimeoutRef.current = setTimeout(() => {
+            if (enabled) startRecognizer();
+          }, 1000);
+        }
       };
 
       activeRecognizer.startContinuousRecognitionAsync(
@@ -153,14 +156,12 @@ export function useSpeechRecognizer({
           isStartingRef.current = false;
           lastActivityAtRef.current = Date.now();
 
-          if (watchdogIntervalRef.current) {
-            clearInterval(watchdogIntervalRef.current);
-          }
-
+          // Setup Watchdog
+          if (watchdogIntervalRef.current) clearInterval(watchdogIntervalRef.current);
           watchdogIntervalRef.current = setInterval(() => {
             const idleMs = Date.now() - lastActivityAtRef.current;
-            if (enabled && idleMs > 35000) {
-              console.warn('[SpeechRecognizer] Watchdog triggered (idle for 35s)');
+            if (enabled && idleMs > 30000) {
+              console.warn('[SpeechRecognizer] Watchdog triggered (silent for 30s), restarting...');
               stopRecognizer().then(() => startRecognizer());
             }
           }, 10000);
@@ -176,18 +177,18 @@ export function useSpeechRecognizer({
     }
   }, [enabled, sourceLocale, onRecognizing, flushBuffer, scheduleFlush, stopRecognizer]);
 
-  // Handle browser online event
+  // Handle network recovery
   useEffect(() => {
     if (!enabled) return;
     const handleOnline = () => {
-      console.info('[SpeechRecognizer] Browser online, recovery triggered');
+      console.info('[SpeechRecognizer] Browser online, triggering recovery');
       stopRecognizer().then(() => startRecognizer());
     };
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
   }, [enabled, startRecognizer, stopRecognizer]);
 
-  // Primary lifecycle
+  // Primary Effect
   useEffect(() => {
     const boot = async () => {
       await stopRecognizer();
