@@ -116,8 +116,8 @@ export interface TranslationSegmentDoc {
 
   originalText: string;
   /**
-   * New multi-target translation map.
-   * Keyed by BCP-47 locale (e.g. 'en-US').
+   * Multi-target translation map.
+   * Can be empty initially (Speculative Captions).
    */
   translations: Record<string, string>;
 

@@ -6,7 +6,7 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 
 /**
  * Performs translation using Azure Translator API v3.0.
- * Now supports multiple target languages in one request (fan-out).
+ * Supports multiple target languages in one request (fan-out).
  */
 async function translateText(text: string, targetLocales: string[]): Promise<Record<string, string>> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
@@ -43,10 +43,12 @@ async function translateText(text: string, targetLocales: string[]): Promise<Rec
     const results: Record<string, string> = {};
 
     // Map responses back to full locales
-    json[0].translations.forEach((t: any) => {
-      const fullLocale = targetLocales.find(loc => loc.startsWith(t.to)) || t.to;
-      results[fullLocale] = t.text;
-    });
+    if (json?.[0]?.translations) {
+      json[0].translations.forEach((t: any) => {
+        const fullLocale = targetLocales.find(loc => loc.startsWith(t.to)) || t.to;
+        results[fullLocale] = t.text;
+      });
+    }
 
     return results;
   } catch (error) {
@@ -56,14 +58,17 @@ async function translateText(text: string, targetLocales: string[]): Promise<Rec
 }
 
 /**
- * Processes a recognized speech segment using the "Speculative Captions" trick
- * and the "Multi-target Fan-out" architecture.
+ * Processes a recognized speech segment using the "Speculative Captions" trick.
+ * 1. Immediate transactional write of original text.
+ * 2. Background translation call.
+ * 3. Update segment with translations.
  */
 export async function POST(request: NextRequest) {
   try {
     const { callId, speakerId, text } = await request.json();
 
-    if (!text?.trim()) {
+    const cleanText = text?.trim();
+    if (!cleanText) {
       return NextResponse.json({ ok: true, skipped: 'empty' });
     }
 
@@ -96,6 +101,7 @@ export async function POST(request: NextRequest) {
     }
 
     // PHASE 1: Immediate Transactional Write (Original Text)
+    // This allows the UI to show captions as soon as they are recognized.
     const { sequence, segmentDocRef } = await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared');
@@ -113,9 +119,9 @@ export async function POST(request: NextRequest) {
         speakerDisplayName: speakerData.displayName,
         sourceLocale: speakerData.sourceLocale,
         targetLocale: speakerData.targetLocale,
-        originalText: text,
+        originalText: cleanText,
         translations: {}, // Empty initially
-        isFinal: true,
+        isFinal: false,   // Becomes true after translation
         sequence: currentSequence,
         emittedAt: FieldValue.serverTimestamp(),
         finalizedAt: null,
@@ -135,15 +141,22 @@ export async function POST(request: NextRequest) {
     });
 
     // PHASE 2: Multi-target Background Translation
-    // For 1-on-1, we still translate to the peer's language, but store it in the translations map.
-    const translations = await translateText(text, [speakerData.targetLocale]);
+    // We determine target locales based on all participants (fan-out).
+    // For MVP 1-on-1, it's just the peer's language.
+    const targetLocales = [speakerData.targetLocale];
+    const translations = await translateText(cleanText, targetLocales);
 
     // PHASE 3: Update with final translations map
     await segmentDocRef.update({
       translations,
+      isFinal: true,
       status: 'final',
       finalizedAt: FieldValue.serverTimestamp(),
+    });
+
+    await translationRef.update({
       'metrics.finalSegments': FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json({ ok: true, sequence });

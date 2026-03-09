@@ -58,7 +58,10 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
             return (
               <div 
                 key={`${segment.speakerUid}-${segment.sequence}-${idx}`} 
-                className="flex flex-col gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2"
+                className={cn(
+                  "flex flex-col gap-1.5 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
+                  isPending && "opacity-80"
+                )}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -79,9 +82,14 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                   </span>
                 </div>
                 
+                {/* 
+                  Speculative Logic: 
+                  If translation is pending, show originalText in primary style.
+                  Once final, show displayTranslation in primary style and originalText as a sub-caption.
+                */}
                 <p className={cn(
                   "text-sm leading-relaxed transition-colors duration-500",
-                  isPending ? "text-white/60 font-medium italic" : "text-white font-bold"
+                  isPending ? "text-white font-medium italic" : "text-white font-bold"
                 )}>
                   {isPending ? segment.originalText : displayTranslation}
                 </p>
