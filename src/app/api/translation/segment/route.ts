@@ -6,65 +6,92 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 /**
  * Performs translation using Azure Translator API v3.0.
  * Supports multiple target languages in one request (fan-out).
+ * Maps short language codes back to full BCP-47 locales.
  */
-async function translateText(text: string, targetLocales: string[]): Promise<Record<string, string>> {
+async function translateText(
+  text: string,
+  targetLocales: string[]
+): Promise<Record<string, string>> {
   const key = process.env.AZURE_TRANSLATOR_KEY;
   const region = process.env.AZURE_TRANSLATOR_REGION;
-  
+
   if (!key) {
-    console.warn('[Translator] AZURE_TRANSLATOR_KEY missing, returning empty translations');
-    return {};
+    throw new Error('AZURE_TRANSLATOR_KEY missing');
   }
 
-  // Build fan-out query params: &to=en&to=uk&to=pl
-  const toParams = targetLocales
-    .map(loc => `to=${loc.split('-')[0]}`)
-    .join('&');
+  const uniqueLocales = [...new Set(targetLocales.filter(Boolean))];
+  const toCodes = uniqueLocales.map((locale) => locale.split('-')[0]);
 
-  const endpoint = `https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&${toParams}`;
+  console.info('[Translator] Request', {
+    text,
+    targetLocales: uniqueLocales,
+    toCodes,
+    region: region || '(none)',
+  });
+
+  const endpoint =
+    'https://api.cognitive.microsofttranslator.com/translate?api-version=3.0';
 
   const headers: Record<string, string> = {
-    "Ocp-Apim-Subscription-Key": key,
-    "Content-Type": "application/json"
+    'Ocp-Apim-Subscription-Key': key,
+    'Content-Type': 'application/json',
   };
 
   if (region) {
-    headers["Ocp-Apim-Subscription-Region"] = region;
+    headers['Ocp-Apim-Subscription-Region'] = region;
   }
 
+  const url = `${endpoint}${toCodes.map((c) => `&to=${encodeURIComponent(c)}`).join('')}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify([{ Text: text }]),
+  });
+
+  const raw = await res.text();
+
+  console.info('[Translator] Response status', res.status);
+  console.info('[Translator] Response body', raw);
+
+  if (!res.ok) {
+    throw new Error(`Azure Translator error ${res.status}: ${raw}`);
+  }
+
+  let json: any;
   try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify([{ Text: text }])
-    });
-
-    if (!res.ok) {
-      throw new Error(`Azure Translator Error: ${res.status}`);
-    }
-
-    const json = await res.json();
-    const results: Record<string, string> = {};
-
-    if (json?.[0]?.translations) {
-      json[0].translations.forEach((t: any) => {
-        const fullLocale = targetLocales.find(loc => loc.startsWith(t.to)) || t.to;
-        results[fullLocale] = t.text;
-      });
-    }
-
-    return results;
-  } catch (error) {
-    console.error('[Translator] Azure Translation failed:', error);
-    return {}; 
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(`Translator returned non-JSON body: ${raw}`);
   }
+
+  const result: Record<string, string> = {};
+
+  if (json?.[0]?.translations?.length) {
+    // map response back to full locale keys (uk-UA, en-US, ...)
+    for (const locale of uniqueLocales) {
+      const short = locale.split('-')[0];
+      const hit = json[0].translations.find((t: any) => t.to === short);
+      if (hit?.text) {
+        result[locale] = hit.text;
+      }
+    }
+  }
+
+  console.info('[Translator] Parsed translations', result);
+
+  if (Object.keys(result).length === 0) {
+    throw new Error('Translator returned empty translations map');
+  }
+
+  return result;
 }
 
 /**
  * Processes a recognized speech segment using the "Speculative Captions" pattern.
  * 1. Immediate transactional write of original text (Zero Latency UI).
  * 2. Background translation call.
- * 3. Update segment with translations and finalize status.
+ * 3. Update segment with translations and finalize status only if successful.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -113,7 +140,7 @@ export async function POST(request: NextRequest) {
       if (!freshSnap.exists) throw new Error('Session disappeared');
       
       const data = freshSnap.data()!;
-      currentSequence = data.nextSequence || 1;
+      currentSequence = data.nextSequence || (data.metrics?.totalSegments || 0) + 1;
       segmentDocRef = translationRef.collection('segments').doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
 
       const initialSegment = {
@@ -142,26 +169,31 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // PHASE 2: Background Translation (Asynchronous)
-    const targetLocales = [speakerData.targetLocale];
-    const translations = await translateText(cleanText, targetLocales);
+    // PHASE 2 & 3: Background Translation & Finalization
+    // We only finalize the segment if translation succeeds.
+    try {
+      const targetLocales = [speakerData.targetLocale];
+      const translations = await translateText(cleanText, targetLocales);
 
-    // PHASE 3: Update with final translations and mark as final
-    await segmentDocRef!.update({
-      translations,
-      isFinal: true,
-      status: 'final',
-      finalizedAt: FieldValue.serverTimestamp(),
-    });
+      await segmentDocRef!.update({
+        translations,
+        isFinal: true,
+        status: 'final',
+        finalizedAt: FieldValue.serverTimestamp(),
+      });
 
-    await translationRef.update({
-      'metrics.finalSegments': FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+      await translationRef.update({
+        'metrics.finalSegments': FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (translateError) {
+      console.error('[TranslationSegment] Background translation failed:', translateError);
+      // Segment remains in 'partial' status so user still sees the original text.
+    }
 
     return NextResponse.json({ ok: true, sequence: currentSequence });
   } catch (error: any) {
-    console.error('[TranslationSegment] failed:', error);
+    console.error('[TranslationSegment] Processing failed:', error);
     return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
   }
 }
