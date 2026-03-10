@@ -41,6 +41,11 @@ export async function POST(
     const callerLang = callerData.preferredLanguage || 'uk-UA';
     const receiverLang = receiverData.preferredLanguage || 'en-US';
 
+    console.info(`[translation/start] Call ${callId} initialization:`, {
+      caller: { id: callerId, lang: callerLang, fromDb: callerData.preferredLanguage },
+      receiver: { id: receiverId, lang: receiverLang, fromDb: receiverData.preferredLanguage }
+    });
+
     // 3. Construct participants array
     const participants = [
       {
