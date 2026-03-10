@@ -37,6 +37,7 @@ const nextConfig: NextConfig = {
     ],
   },
   // Adding a unique build ID indicator to force a clean cache recognition
+  // This helps resolve ENOENT errors related to stale chunks in .next folder
   generateBuildId: async () => {
     return `build-${Date.now()}`;
   },
