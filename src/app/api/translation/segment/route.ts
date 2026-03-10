@@ -201,6 +201,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('[TranslationSegment] Global processing failed:', error);
-    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
+    console.error('[TranslationSegment] Stack:', error?.stack || '(no stack)');
+    return NextResponse.json(
+      { error: error?.message || 'Internal error' },
+      { status: 500 }
+    );
   }
 }
