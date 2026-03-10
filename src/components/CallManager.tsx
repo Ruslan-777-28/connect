@@ -36,6 +36,14 @@ type AcceptCallResult = {
 
 type EndCallResult = { ok: true };
 
+const languageNames: Record<string, string> = {
+  'uk-UA': 'Українська',
+  'en-US': 'Англійська',
+  'pl-PL': 'Польська',
+  'de-DE': 'Німецька',
+  'fr-FR': 'Французька',
+};
+
 export function CallManager() {
   const { user } = useUser();
   const firestore = useFirestore();
@@ -52,6 +60,19 @@ export function CallManager() {
   useEffect(() => {
     busyCallIdRef.current = busyCallId;
   }, [busyCallId]);
+
+  // Fetch profiles for the incoming call notification
+  const incomingCallerRef = useMemoFirebase(
+    () => (incomingCall?.callerId ? doc(firestore, 'users', incomingCall.callerId) : null),
+    [incomingCall?.callerId, firestore]
+  );
+  const { data: incomingCallerProfile } = useDoc<UserProfile>(incomingCallerRef);
+
+  const myProfileRef = useMemoFirebase(
+    () => (user?.uid ? doc(firestore, 'users', user.uid) : null),
+    [user?.uid, firestore]
+  );
+  const { data: myProfile } = useDoc<UserProfile>(myProfileRef);
 
   // Firestore Listeners for active (accepted) calls to show ActiveCallBar
   const callerCallsQuery = useMemoFirebase(() => {
@@ -173,9 +194,14 @@ export function CallManager() {
     }
   };
 
+  const getLanguageName = (locale?: string) => {
+    if (!locale) return '...';
+    return languageNames[locale] || locale;
+  };
+
   return (
     <>
-      {/* Incoming Call Modal - Batch 1 updated with Translator button logic */}
+      {/* Incoming Call Modal */}
       {incomingCall && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in duration-200">
           <Card className="w-full max-w-[320px] shadow-2xl border-primary/20">
@@ -204,9 +230,12 @@ export function CallManager() {
                   </Label>
                 </div>
                 {incomingCall.translationEnabled && (
-                  <p className="text-[10px] text-muted-foreground italic text-center">
-                    * Співрозмовник просить підключити AI-перекладач
-                  </p>
+                  <div className="text-[10px] text-muted-foreground italic text-center space-y-1">
+                    <p>* Співрозмовник просить підключити AI-перекладач</p>
+                    <p className="font-bold text-primary/80">
+                      (Мова дозвонювача: {getLanguageName(incomingCallerProfile?.preferredLanguage)} → Ваша мова: {getLanguageName(myProfile?.preferredLanguage)})
+                    </p>
+                  </div>
                 )}
               </div>
             </CardContent>
