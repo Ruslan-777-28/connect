@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -83,33 +82,36 @@ export default function CallRoomPage() {
   const handleRecognized = useCallback(async (text: string) => {
     if (!myProfileId || !text?.trim()) return;
     
-    // Exact log format requested for debugging
-    console.log('[CallRoom] Sending segment payload', {
-      callId,
-      speakerId: myProfileId,
-      text,
-    });
-    
-    // Send to translation pipeline - using absolute localhost URL for Cloud Workstation environment
     try {
-      const res = await fetch('http://localhost:3000/api/translation/segment', {
+      const apiUrl = `${window.location.origin}/api/translation/segment`;
+
+      console.log('[CallRoom] Sending segment payload', {
+        callId,
+        speakerId: myProfileId,
+        text,
+        apiUrl,
+      });
+
+      const res = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json' 
+        headers: {
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           callId,
           speakerId: myProfileId,
           text,
-        })
+        }),
       });
 
+      const responseText = await res.text();
+      console.log('[CallRoom] translation/segment response', res.status, responseText);
+
       if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        console.error('[CallRoom] API Error:', res.status, errorData);
+        throw new Error(`translation/segment failed: ${res.status} ${responseText}`);
       }
     } catch (err) {
-      console.error('Failed to send translation segment:', err);
+      console.error('[CallRoom] Failed to send translation segment:', err);
     }
   }, [callId, myProfileId]);
 
@@ -140,7 +142,6 @@ export default function CallRoomPage() {
         }
 
         if (data.status === 'accepted' && data.translationEnabled && translationStatus === 'idle') {
-          // Use absolute URL here too for consistency if needed, but keeping relative for now
           fetch(`/api/calls/${callId}/translation/start`, { method: 'POST' }).catch(console.error);
         }
       },
