@@ -86,6 +86,11 @@ async function translateText(
 
 /**
  * Processes a recognized speech segment using the "Speculative Captions" pattern.
+ * This version ensures sequential processing: 
+ * 1. Transactional write of original text.
+ * 2. Async Azure translation.
+ * 3. Final update of the same document.
+ * 4. Response only after all steps are complete.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -132,7 +137,7 @@ export async function POST(request: NextRequest) {
     let currentSequence = 0;
     let segmentId = '';
 
-    // PHASE 1: Immediate Transactional Write (Original Text Only)
+    // STEP 1: Immediate Transactional Write (Original Text Only)
     await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared');
@@ -170,39 +175,30 @@ export async function POST(request: NextRequest) {
 
     const segmentRef = translationRef.collection('segments').doc(segmentId);
 
-    // PHASE 2 & 3: Translation & Finalization (Sequential)
-    try {
-      const targetLocales = [speakerData.targetLocale];
-      const translations = await translateText(cleanText, targetLocales);
+    // STEP 2: Async Translation
+    const targetLocales = [speakerData.targetLocale];
+    const translations = await translateText(cleanText, targetLocales);
 
-      await segmentRef.update({
-        translations,
-        isFinal: true,
-        status: 'final',
-        finalizedAt: FieldValue.serverTimestamp(),
-      });
+    // STEP 3: Final Update of the same document
+    await segmentRef.update({
+      translations,
+      isFinal: true,
+      status: 'final',
+      finalizedAt: FieldValue.serverTimestamp(),
+    });
 
-      await translationRef.update({
-        'metrics.finalSegments': FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+    // STEP 4: Update global metrics
+    await translationRef.update({
+      'metrics.finalSegments': FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 
-      return NextResponse.json({
-        ok: true,
-        sequence: currentSequence,
-        translations,
-      });
-    } catch (translateError: any) {
-      console.error('[TranslationSegment] Sequential translation failed:', translateError);
-      
-      // Fallback: stay partial but return 200 to acknowledge speech recognition
-      return NextResponse.json({ 
-        ok: true, 
-        sequence: currentSequence, 
-        error: translateError.message,
-        status: 'partial'
-      });
-    }
+    // FINAL STEP: Return response only after database is fully updated
+    return NextResponse.json({
+      ok: true,
+      sequence: currentSequence,
+      translations,
+    });
   } catch (error: any) {
     console.error('[TranslationSegment] Global processing failed:', error);
     return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
