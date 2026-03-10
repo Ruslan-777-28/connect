@@ -6,9 +6,6 @@ import type { TranslationSegmentDoc } from '@/lib/translation/types';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
-import type { UserProfile } from '@/lib/types';
 
 interface TranslatedCaptionsPanelProps {
   segments: TranslationSegmentDoc[] | null;
@@ -18,12 +15,6 @@ interface TranslatedCaptionsPanelProps {
 
 export function TranslatedCaptionsPanel({ segments, localPreview, className }: TranslatedCaptionsPanelProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
-  const { user } = useUser();
-  const firestore = useFirestore();
-
-  const userRef = useMemoFirebase(() => (user ? doc(firestore, 'users', user.uid) : null), [user, firestore]);
-  const { data: profile } = useDoc<UserProfile>(userRef);
-  const myLocale = profile?.preferredLanguage || 'uk-UA';
 
   useEffect(() => {
     if (viewportRef.current) {
@@ -49,7 +40,7 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
       <ScrollArea className="h-full w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/10 shadow-2xl overflow-hidden">
         <div className="p-3 md:p-4 space-y-3 md:space-y-5">
           {segments?.map((segment, idx) => {
-            const displayTranslation = segment.translations?.[myLocale] || Object.values(segment.translations)[0];
+            const displayTranslation = segment.translatedText ?? null;
             const isPending = !displayTranslation;
             
             return (
@@ -75,7 +66,7 @@ export function TranslatedCaptionsPanel({ segments, localPreview, className }: T
                     )}
                   </div>
                   <span className="text-[7px] text-white/20 font-mono uppercase tracking-tighter">
-                    {segment.sourceLocale} → {myLocale}
+                    {segment.sourceLocale} → {segment.targetLocale}
                   </span>
                 </div>
                 
