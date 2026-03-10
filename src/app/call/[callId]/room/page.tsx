@@ -82,13 +82,14 @@ export default function CallRoomPage() {
   const handleRecognized = useCallback(async (text: string) => {
     if (!myProfileId || !text?.trim()) return;
     
+    // Exact log format requested for debugging
     console.log('[CallRoom] Sending segment payload', {
       callId,
       speakerId: myProfileId,
       text,
     });
     
-    // Send to translation pipeline
+    // Send to translation pipeline - using strictly formatted fetch
     try {
       const res = await fetch('/api/translation/segment', {
         method: 'POST',
@@ -98,7 +99,7 @@ export default function CallRoomPage() {
         body: JSON.stringify({
           callId,
           speakerId: myProfileId,
-          text: text,
+          text,
         })
       });
 
