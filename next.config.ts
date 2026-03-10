@@ -8,6 +8,18 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Explicitly transpile Firebase packages to ensure vendor chunks are correctly generated
+  transpilePackages: [
+    'firebase',
+    '@firebase/app',
+    '@firebase/auth',
+    '@firebase/firestore',
+    '@firebase/storage',
+    '@firebase/functions',
+    '@firebase/util',
+    '@firebase/component',
+    '@firebase/logger',
+  ],
   images: {
     remotePatterns: [
       {
