@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -89,9 +90,9 @@ export default function CallRoomPage() {
       text,
     });
     
-    // Send to translation pipeline - using strictly formatted fetch
+    // Send to translation pipeline - using absolute localhost URL for Cloud Workstation environment
     try {
-      const res = await fetch('/api/translation/segment', {
+      const res = await fetch('http://localhost:3000/api/translation/segment', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json' 
@@ -139,6 +140,7 @@ export default function CallRoomPage() {
         }
 
         if (data.status === 'accepted' && data.translationEnabled && translationStatus === 'idle') {
+          // Use absolute URL here too for consistency if needed, but keeping relative for now
           fetch(`/api/calls/${callId}/translation/start`, { method: 'POST' }).catch(console.error);
         }
       },
