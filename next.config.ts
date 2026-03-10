@@ -36,6 +36,10 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Adding a unique build ID indicator to force a clean cache recognition
+  generateBuildId: async () => {
+    return `build-${Date.now()}`;
+  },
 };
 
 export default nextConfig;
