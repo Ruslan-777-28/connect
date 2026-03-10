@@ -123,28 +123,24 @@ export async function POST(request: NextRequest) {
     }
 
     const participants = translationData.participants || {};
-    let speakerData;
-    if (Array.isArray(participants)) {
-      speakerData = participants.find((p: any) => p.uid === speakerId);
-    } else {
-      speakerData = participants[speakerId];
-    }
+    const speakerData = participants[speakerId];
 
     if (!speakerData) {
-      return NextResponse.json({ error: 'Speaker not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Speaker config not found' }, { status: 404 });
     }
 
-    // PHASE 1: Immediate Transactional Write (Original Text Only)
     let currentSequence = 0;
-    let segmentDocRef: FirebaseFirestore.DocumentReference;
+    let segmentId = '';
 
+    // PHASE 1: Immediate Transactional Write (Original Text Only)
     await adminDb.runTransaction(async (transaction) => {
       const freshSnap = await transaction.get(translationRef);
       if (!freshSnap.exists) throw new Error('Session disappeared');
       
       const data = freshSnap.data()!;
       currentSequence = data.nextSequence || (data.metrics?.totalSegments || 0) + 1;
-      segmentDocRef = translationRef.collection('segments').doc(`seg_${currentSequence.toString().padStart(6, '0')}`);
+      segmentId = `seg_${currentSequence.toString().padStart(6, '0')}`;
+      const segmentDocRef = translationRef.collection('segments').doc(segmentId);
 
       const initialSegment = {
         callId,
@@ -172,12 +168,14 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // PHASE 2 & 3: Background Translation & Finalization
+    const segmentRef = translationRef.collection('segments').doc(segmentId);
+
+    // PHASE 2 & 3: Translation & Finalization (Sequential)
     try {
       const targetLocales = [speakerData.targetLocale];
       const translations = await translateText(cleanText, targetLocales);
 
-      await segmentDocRef!.update({
+      await segmentRef.update({
         translations,
         isFinal: true,
         status: 'final',
@@ -188,13 +186,25 @@ export async function POST(request: NextRequest) {
         'metrics.finalSegments': FieldValue.increment(1),
         updatedAt: FieldValue.serverTimestamp(),
       });
-    } catch (translateError) {
-      console.error('[TranslationSegment] Background translation failed:', translateError);
-    }
 
-    return NextResponse.json({ ok: true, sequence: currentSequence });
+      return NextResponse.json({
+        ok: true,
+        sequence: currentSequence,
+        translations,
+      });
+    } catch (translateError: any) {
+      console.error('[TranslationSegment] Sequential translation failed:', translateError);
+      
+      // Fallback: stay partial but return 200 to acknowledge speech recognition
+      return NextResponse.json({ 
+        ok: true, 
+        sequence: currentSequence, 
+        error: translateError.message,
+        status: 'partial'
+      });
+    }
   } catch (error: any) {
-    console.error('[TranslationSegment] Processing failed:', error);
+    console.error('[TranslationSegment] Global processing failed:', error);
     return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
   }
 }
