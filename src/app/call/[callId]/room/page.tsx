@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -81,21 +80,32 @@ export default function CallRoomPage() {
   const myConfig = translation?.participants?.[myProfileId || ''];
   
   const handleRecognized = useCallback(async (text: string) => {
-    if (!myProfileId) return;
+    if (!myProfileId || !text?.trim()) return;
     
-    console.log(`[CallRoom] Sending segment for ${myProfileId}: ${text}`);
+    console.log('[CallRoom] Sending segment payload', {
+      callId,
+      speakerId: myProfileId,
+      text,
+    });
     
     // Send to translation pipeline
     try {
-      await fetch('/api/translation/segment', {
+      const res = await fetch('/api/translation/segment', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json' 
+        },
         body: JSON.stringify({
           callId,
           speakerId: myProfileId,
           text: text,
         })
       });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error('[CallRoom] API Error:', res.status, errorData);
+      }
     } catch (err) {
       console.error('Failed to send translation segment:', err);
     }

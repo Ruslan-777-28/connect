@@ -6,7 +6,6 @@ import { TRANSLATION_COLLECTION } from '@/lib/translation/constants';
 /**
  * Performs translation using Azure Translator API v3.0.
  * Supports multiple target languages in one request (fan-out).
- * Maps short language codes back to full BCP-47 locales.
  */
 async function translateText(
   text: string,
@@ -52,7 +51,6 @@ async function translateText(
   const raw = await res.text();
 
   console.info('[Translator] Response status', res.status);
-  console.info('[Translator] Response body', raw);
 
   if (!res.ok) {
     throw new Error(`Azure Translator error ${res.status}: ${raw}`);
@@ -68,7 +66,6 @@ async function translateText(
   const result: Record<string, string> = {};
 
   if (json?.[0]?.translations?.length) {
-    // map response back to full locale keys (uk-UA, en-US, ...)
     for (const locale of uniqueLocales) {
       const short = locale.split('-')[0];
       const hit = json[0].translations.find((t: any) => t.to === short);
@@ -89,21 +86,28 @@ async function translateText(
 
 /**
  * Processes a recognized speech segment using the "Speculative Captions" pattern.
- * 1. Immediate transactional write of original text (Zero Latency UI).
- * 2. Background translation call.
- * 3. Update segment with translations and finalize status only if successful.
  */
 export async function POST(request: NextRequest) {
   try {
-    const { callId, speakerId, text } = await request.json();
+    let payload: any = null;
 
-    const cleanText = text?.trim();
-    if (!cleanText) {
-      return NextResponse.json({ ok: true, skipped: 'empty' });
+    try {
+      payload = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid or empty JSON body' },
+        { status: 400 }
+      );
     }
 
-    if (!callId || !speakerId) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    const { callId, speakerId, text } = payload || {};
+    const cleanText = typeof text === 'string' ? text.trim() : '';
+
+    if (!callId || !speakerId || !cleanText) {
+      return NextResponse.json(
+        { error: 'Missing required fields: callId, speakerId, text' },
+        { status: 400 }
+      );
     }
 
     const translationRef = adminDb.collection(TRANSLATION_COLLECTION).doc(callId);
@@ -131,7 +135,6 @@ export async function POST(request: NextRequest) {
     }
 
     // PHASE 1: Immediate Transactional Write (Original Text Only)
-    // This RESERVES the sequence number and puts the text on screen ASAP.
     let currentSequence = 0;
     let segmentDocRef: FirebaseFirestore.DocumentReference;
 
@@ -151,7 +154,7 @@ export async function POST(request: NextRequest) {
         sourceLocale: speakerData.sourceLocale,
         targetLocale: speakerData.targetLocale,
         originalText: cleanText,
-        translations: {}, // Empty initially
+        translations: {}, 
         isFinal: false,
         sequence: currentSequence,
         emittedAt: FieldValue.serverTimestamp(),
@@ -170,7 +173,6 @@ export async function POST(request: NextRequest) {
     });
 
     // PHASE 2 & 3: Background Translation & Finalization
-    // We only finalize the segment if translation succeeds.
     try {
       const targetLocales = [speakerData.targetLocale];
       const translations = await translateText(cleanText, targetLocales);
@@ -188,7 +190,6 @@ export async function POST(request: NextRequest) {
       });
     } catch (translateError) {
       console.error('[TranslationSegment] Background translation failed:', translateError);
-      // Segment remains in 'partial' status so user still sees the original text.
     }
 
     return NextResponse.json({ ok: true, sequence: currentSequence });
