@@ -27,7 +27,8 @@ export async function endCallClient(
     await endCall({ callId, reason });
 
     // Trigger transcript generation after call ends if enabled
-    fetch(`/api/calls/${callId}/transcript/generate`, { method: 'POST' }).catch(console.error);
+    // Тимчасово вимкнено через помилку 500 для стабілізації тестування перекладу
+    // fetch(`/api/calls/${callId}/transcript/generate`, { method: 'POST' }).catch(console.error);
     
   } catch (error) {
     console.error(`Failed to end call ${callId} with reason ${reason}:`, error);
