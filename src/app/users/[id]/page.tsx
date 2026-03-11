@@ -10,7 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package, Calendar, Globe, History } from 'lucide-react';
+import { Video, FileText, HelpCircle, Phone, Send, Loader2, Layout, Package, Calendar, Globe, History, Languages } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { startVideoCall } from '@/lib/calls';
 import { isInstantOnline } from '@/lib/availability';
@@ -36,6 +36,14 @@ import { ProductCard } from '@/components/product-card';
 import { CalendarView } from '@/components/CalendarView';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+
+const languageNames: Record<string, string> = {
+  'uk-UA': 'Українська',
+  'en-US': 'Англійська',
+  'pl-PL': 'Польська',
+  'de-DE': 'Німецька',
+  'fr-FR': 'Французька',
+};
 
 export default function UserProfilePage() {
   const params = useParams();
@@ -167,12 +175,20 @@ export default function UserProfilePage() {
 
   return (
     <div className="container mx-auto max-w-4xl px-4 py-8 pb-32">
-      <Card className="overflow-hidden mb-8">
+      <Card className="overflow-hidden mb-8 shadow-sm">
         <div className="h-32 bg-primary/20" />
         <CardContent className="relative -mt-16 flex flex-col items-center p-6 text-center">
           <UserAvatar user={userProfile as any} className="h-32 w-32 border-4 border-card" />
-          <h1 className="mt-4 text-3xl font-bold">{userProfile.name}</h1>
-          <p className="mt-4 max-w-prose text-foreground/80">{userProfile.bio}</p>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight">{userProfile.name}</h1>
+          
+          {userProfile.preferredLanguage && (
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/10 px-3 py-1 rounded-full border border-primary/10">
+              <Languages className="h-3 w-3" />
+              <span>{languageNames[userProfile.preferredLanguage] || userProfile.preferredLanguage}</span>
+            </div>
+          )}
+
+          <p className="mt-4 max-w-prose text-foreground/80 leading-relaxed">{userProfile.bio}</p>
           
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button 
